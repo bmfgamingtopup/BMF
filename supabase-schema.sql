@@ -594,7 +594,4 @@ for select
 using (true);
 
 drop policy if exists "Allow public insert to gift_card_orders" on public.gift_card_orders;
-create policy "Allow public insert to gift_card_orders"
-on public.gift_card_orders
-for insert
-with check (true);
+revoke insert on public.gift_card_orders from public, anon, authenticated;
