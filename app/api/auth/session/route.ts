@@ -7,7 +7,7 @@ export async function GET(request: Request) {
 
   const { data: profile, error } = await auth.client
     .from('profiles')
-    .select('role')
+    .select('role, first_name, last_name, free_fire_id')
     .eq('id', auth.user.id)
     .single();
 
@@ -16,7 +16,12 @@ export async function GET(request: Request) {
   }
 
   return NextResponse.json(
-    { role: profile.role },
+    {
+      role: profile.role,
+      firstName: profile.first_name,
+      lastName: profile.last_name,
+      freeFireId: profile.free_fire_id,
+    },
     { headers: { 'Cache-Control': 'private, no-store' } },
   );
 }

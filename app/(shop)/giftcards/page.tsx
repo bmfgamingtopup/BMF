@@ -5,6 +5,9 @@ import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { fetchCatalogData, type GiftCard } from '@/lib/data';
 import { submitGiftCardOrder, submitPaymentProof } from '@/lib/supabase/client';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 
 export default function GiftCardsPage() {
   const [cards, setCards] = useState<GiftCard[]>([]);
@@ -183,6 +186,7 @@ export default function GiftCardsPage() {
           </div>
 
           <aside className="border-t border-white/10 pt-5 lg:sticky lg:top-6 lg:self-start lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+            <Card className="border-white/10 bg-slate-900/70 p-5 text-slate-100 shadow-xl shadow-black/10">
             <h2 className="text-2xl font-bold text-white">Commande rapide</h2>
             <div className="mt-4 border-y border-amber-300/20 py-3">
               <div className="text-xs uppercase tracking-[0.2em] text-amber-200">Produit choisi</div>
@@ -217,14 +221,15 @@ export default function GiftCardsPage() {
               </div>
             </div>}
 
-            {!createdOrder ? <button
+            {!createdOrder ? <Button
               type="button"
               onClick={handleOrder}
               disabled={loading}
-              className="mt-6 w-full rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 px-4 py-3 font-semibold text-slate-950 disabled:opacity-50"
+              size="lg"
+              className="mt-6 w-full rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-950 hover:from-amber-300 hover:to-orange-400"
             >
               {loading ? 'Création…' : 'Créer la référence de paiement'}
-            </button> : ordered ? (
+            </Button> : ordered ? (
               <div className="mt-5 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-4 text-sm text-emerald-100">
                 Référence <strong className="text-white">{createdOrder.reference}</strong> • statut : preuve reçue, vérification en attente.
               </div>
@@ -244,17 +249,17 @@ export default function GiftCardsPage() {
                 </div>
                 <form className="space-y-4" onSubmit={handleProofSubmit}>
                   <label className="block">ID de transaction
-                    <input value={transactionId} onChange={(event) => setTransactionId(event.target.value)} className="field" required minLength={3} maxLength={120} />
+                    <Input value={transactionId} onChange={(event) => setTransactionId(event.target.value)} className="field bg-slate-950 text-white" required minLength={3} maxLength={120} />
                   </label>
                   <label className="block">Téléphone expéditeur
-                    <input value={paymentPhone} onChange={(event) => setPaymentPhone(event.target.value)} className="field" type="tel" autoComplete="tel" />
+                    <Input value={paymentPhone} onChange={(event) => setPaymentPhone(event.target.value)} className="field bg-slate-950 text-white" type="tel" autoComplete="tel" />
                   </label>
                   <label className="block">Preuve de paiement (JPG, PNG, WebP ou PDF, 5 Mo max.)
-                    <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={(event) => setProofFile(event.target.files?.[0] ?? null)} className="field" required />
+                    <Input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={(event) => setProofFile(event.target.files?.[0] ?? null)} className="field bg-slate-950 text-white" required />
                   </label>
-                  <button type="submit" disabled={loading} className="primary-btn w-full disabled:opacity-50">
+                  <Button type="submit" disabled={loading} className="w-full">
                     {loading ? 'Envoi…' : 'Envoyer la preuve'}
-                  </button>
+                  </Button>
                 </form>
               </div>
             )}
@@ -271,6 +276,7 @@ export default function GiftCardsPage() {
                 )}
               </div>
             )}
+            </Card>
           </aside>
         </div>
       </div>

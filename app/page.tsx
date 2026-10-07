@@ -21,7 +21,6 @@ export default async function HomePage() {
         <nav className="hidden items-center gap-7 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300 md:flex">
           <Link href="/topup" className="transition hover:text-white">Recharges</Link>
           <Link href="/giftcards" className="transition hover:text-white">Gift Card</Link>
-          <Link href="/login" className="transition hover:text-white">Connexion</Link>
         </nav>
 
         <div className="ml-auto flex flex-wrap items-center justify-end gap-2 sm:gap-3">
@@ -227,42 +226,6 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <footer className="site-footer mt-6">
-        <div className="page-shell py-8">
-          <div className="grid gap-8 pb-8 md:grid-cols-[1.4fr_0.8fr_0.8fr]">
-            <div>
-              <div className="font-semibold tracking-[0.2em] text-violet-300">BMF</div>
-              <p className="mt-3 max-w-sm text-sm leading-6 text-slate-400">
-                Marketplace premium pour recharges, cartes cadeaux et services gaming, pensé pour des joueurs exigeants.
-              </p>
-            </div>
-
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400">Service</p>
-              <ul className="mt-3 space-y-2 text-sm text-slate-300">
-                <li><Link href="/topup" className="transition hover:text-white">Recharges</Link></li>
-                <li><Link href="/giftcards" className="transition hover:text-white">Cartes cadeaux</Link></li>
-                <li><Link href="/faq" className="transition hover:text-white">FAQ</Link></li>
-              </ul>
-            </div>
-
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400">Légal</p>
-              <ul className="mt-3 space-y-2 text-sm text-slate-300">
-                <li><Link href="/cgu" className="transition hover:text-white">Conditions générales (CGU)</Link></li>
-              </ul>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-3 border-t border-white/10 pt-6 text-sm text-slate-400 sm:flex-row sm:items-center sm:justify-between">
-            <div>© 2026 BMF — Gaming marketplace</div>
-            <div className="flex items-center gap-4">
-              <Link href="/faq" className="transition hover:text-white">FAQ</Link>
-              <Link href="/cgu" className="transition hover:text-white">CGU</Link>
-            </div>
-          </div>
-        </div>
-      </footer>
     </main>
   );
 }

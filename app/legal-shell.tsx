@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import Link from 'next/link';
 
 export default function LegalShell({
@@ -12,7 +13,16 @@ export default function LegalShell({
   return (
     <main className="min-h-screen text-slate-100">
       <header className="page-shell flex flex-wrap items-center justify-between gap-4 py-5">
-        <Link href="/" className="text-lg font-black tracking-[0.2em] text-violet-200" aria-label="BMF, accueil">BMF</Link>
+        <Link href="/" className="flex items-center" aria-label="BMF Top Up, accueil">
+          <Image
+            src="/images/f4926c3f-d414-4219-8637-7c45c80f82ce.png"
+            alt="Logo BMF Top Up"
+            width={1320}
+            height={1192}
+            priority
+            className="h-10 w-auto object-contain"
+          />
+        </Link>
         <nav className="flex flex-wrap gap-4 text-sm text-slate-300" aria-label="Navigation principale">
           <Link href="/topup" className="hover:text-white">Recharges</Link>
           <Link href="/giftcards" className="hover:text-white">Cartes cadeaux</Link>
@@ -30,15 +40,6 @@ export default function LegalShell({
         </div>
       </section>
 
-      <footer className="site-footer">
-        <div className="page-shell flex flex-wrap items-center justify-between gap-4 py-6 text-sm text-slate-400">
-          <span>© 2026 BMF</span>
-          <nav className="flex gap-5" aria-label="Pages d’information">
-            <Link href="/faq" className="hover:text-white">FAQ</Link>
-            <Link href="/cgu" className="hover:text-white">CGU</Link>
-          </nav>
-        </div>
-      </footer>
     </main>
   );
 }

@@ -4,7 +4,10 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { fetchCatalogData, type TopUpPack } from '@/lib/data';
-import { submitPaymentProof, submitTopUpOrder } from '@/lib/supabase/client';
+import { createSupabaseClient, submitPaymentProof, submitTopUpOrder } from '@/lib/supabase/client';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 
 export default function TopUpPage() {
   const [packs, setPacks] = useState<TopUpPack[]>([]);
@@ -28,6 +31,27 @@ export default function TopUpPage() {
       if (!isMounted) return;
       setPacks(data.topUpPacks);
       setSelectedPackId(data.topUpPacks[0]?.id ?? '');
+
+      const client = createSupabaseClient();
+      if (client) {
+        const { data: sessionData, error: sessionError } = await client.auth.getSession();
+        if (sessionError) {
+          setStatusMessage('Impossible de charger ton ID Free Fire enregistré. Tu peux le saisir manuellement.');
+        } else if (sessionData.session) {
+          const userId = sessionData.session.user.id;
+          const { data: playerProfile, error } = await client
+            .from('profiles')
+            .select('free_fire_id')
+            .eq('id', userId)
+            .single();
+          if (!isMounted) return;
+          if (error) {
+            setStatusMessage('ID Free Fire enregistré impossible à charger. Tu peux le saisir manuellement.');
+          } else if (playerProfile.free_fire_id) {
+            setUid(playerProfile.free_fire_id);
+          }
+        }
+      }
     };
 
     void load();
@@ -194,16 +218,17 @@ export default function TopUpPage() {
           </section>
 
           <aside className="border-t border-white/10 pt-5 lg:sticky lg:top-6 lg:self-start lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+            <Card className="border-white/10 bg-slate-900/70 p-5 text-slate-100 shadow-xl shadow-black/10">
             <h2 className="text-2xl font-bold text-white">Passer une commande</h2>
             {!createdOrder ? <form className="mt-5 space-y-4 text-sm text-slate-300" onSubmit={handleSubmit}>
               <label className="block">
                 Player ID (UID)
-                <input
+                <Input
                   type="text"
                   required
                   value={uid}
                   onChange={(event) => setUid(event.target.value)}
-                  className="mt-2 w-full rounded-2xl border border-white/10 bg-slate-900 px-4 py-3 text-white outline-none focus:border-violet-400"
+                  className="mt-2 border-white/10 bg-slate-950 text-white focus-visible:ring-violet-400"
                 />
               </label>
 
@@ -253,9 +278,9 @@ export default function TopUpPage() {
 
               <p className="text-xs text-slate-400">Connexion requise pour créer une commande. <Link href="/login" className="text-cyan-300 hover:text-cyan-100">Se connecter</Link> ou <Link href="/register" className="text-cyan-300 hover:text-cyan-100">créer un compte</Link>.</p>
 
-              <button type="submit" disabled={loading} className="w-full rounded-2xl bg-gradient-to-r from-violet-600 to-cyan-500 px-4 py-3 font-semibold text-white disabled:opacity-50">
+              <Button type="submit" disabled={loading} size="lg" className="w-full rounded-xl bg-gradient-to-r from-violet-600 to-cyan-500 text-white hover:from-violet-500 hover:to-cyan-400">
                 {loading ? 'Création…' : 'Créer la référence de paiement'}
-              </button>
+              </Button>
             </form> : submitted ? (
               <div className="mt-5 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-4 text-sm text-emerald-100">
                 Référence <strong className="text-white">{createdOrder.reference}</strong> • statut : preuve reçue, vérification en attente.
@@ -277,17 +302,17 @@ export default function TopUpPage() {
                 </div>
                 <form className="space-y-4" onSubmit={handleProofSubmit}>
                   <label className="block">ID de transaction
-                    <input value={transactionId} onChange={(event) => setTransactionId(event.target.value)} className="field" required minLength={3} maxLength={120} />
+                    <Input value={transactionId} onChange={(event) => setTransactionId(event.target.value)} className="field bg-slate-950 text-white" required minLength={3} maxLength={120} />
                   </label>
                   <label className="block">Téléphone expéditeur
-                    <input value={paymentPhone} onChange={(event) => setPaymentPhone(event.target.value)} className="field" type="tel" autoComplete="tel" />
+                    <Input value={paymentPhone} onChange={(event) => setPaymentPhone(event.target.value)} className="field bg-slate-950 text-white" type="tel" autoComplete="tel" />
                   </label>
                   <label className="block">Preuve de paiement (JPG, PNG, WebP ou PDF, 5 Mo max.)
-                    <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={(event) => setProofFile(event.target.files?.[0] ?? null)} className="field" required />
+                    <Input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={(event) => setProofFile(event.target.files?.[0] ?? null)} className="field bg-slate-950 text-white" required />
                   </label>
-                  <button type="submit" disabled={loading} className="primary-btn w-full disabled:opacity-50">
+                  <Button type="submit" disabled={loading} className="w-full">
                     {loading ? 'Envoi…' : 'Envoyer la preuve'}
-                  </button>
+                  </Button>
                 </form>
               </div>
             )}
@@ -297,6 +322,7 @@ export default function TopUpPage() {
                 {statusMessage}
               </div>
             )}
+            </Card>
           </aside>
         </div>
       </div>

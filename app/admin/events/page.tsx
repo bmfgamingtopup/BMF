@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useEffect, useState, type FormEvent } from 'react';
 import { getAccessToken } from '@/lib/supabase/client';
 import type { AiEvent } from '@/lib/data';
+import UpcomingEventModeration from '@/components/admin/UpcomingEventModeration';
 
 type EventRow = AiEvent & { id: string };
 
@@ -208,6 +209,7 @@ export default function AdminEventsPage() {
             Aucun article généré pour le moment. La file d’attente IA s’active dès que le moteur de contenu est connecté.
           </div>
         )}
+        <UpcomingEventModeration />
       </div>
     </main>
   );

@@ -1,8 +1,26 @@
 @import 'tailwindcss';
 
 :root {
-  --background: #070b17;
-  --foreground: #e2e8f0;
+  --background: #ffffff;
+  --foreground: #201d1c;
+  --card: #ffffff;
+  --card-foreground: #201d1c;
+  --popover: #ffffff;
+  --popover-foreground: #201d1c;
+  --primary: #df3d35;
+  --primary-foreground: #ffffff;
+  --secondary: #f5f1ef;
+  --secondary-foreground: #332a27;
+  --muted: #f4f1ef;
+  --muted-foreground: #766a66;
+  --accent: #f5e9e7;
+  --accent-foreground: #9f2e29;
+  --destructive: #c8322b;
+  --destructive-foreground: #ffffff;
+  --border: #e7dfdc;
+  --input: #e7dfdc;
+  --ring: #df3d35;
+  --radius: 0.75rem;
   --panel: rgba(15, 23, 42, 0.8);
   --panel-bright: rgba(17, 24, 39, 0.95);
   --violet: #8b5cf6;
@@ -14,6 +32,23 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -42,6 +77,15 @@ select {
   font: inherit;
 }
 
+button {
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
 img {
   max-width: 100%;
   display: block;
@@ -64,11 +108,11 @@ a {
 }
 
 .primary-btn {
-  @apply inline-flex items-center justify-center rounded-full bg-gradient-to-r from-violet-600 to-cyan-500 px-5 py-3 text-sm font-semibold text-white shadow-[0_16px_32px_rgba(124,58,237,0.35)] transition hover:-translate-y-0.5 hover:shadow-[0_20px_40px_rgba(34,211,238,0.22)];
+  @apply inline-flex items-center justify-center rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
 }
 
 .secondary-btn {
-  @apply inline-flex items-center justify-center rounded-full border border-white/12 bg-slate-900/70 px-5 py-3 text-sm font-semibold text-slate-100 transition hover:border-cyan-400/60 hover:text-cyan-200;
+  @apply inline-flex items-center justify-center rounded-xl border border-white/15 bg-slate-900/70 px-5 py-3 text-sm font-semibold text-slate-100 transition-colors hover:border-white/25 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
 }
 
 .section-heading {
@@ -804,4 +848,3 @@ a {
     padding: 18px 16px !important;
   }
 }
-

@@ -6,12 +6,14 @@ create table if not exists public.profiles (
   email_confirmed_at timestamptz,
   first_name text not null default '',
   last_name text not null default '',
+  free_fire_id text not null default '',
   role text not null default 'customer' check (role in ('customer', 'admin')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
 alter table public.profiles add column if not exists email_confirmed_at timestamptz;
+alter table public.profiles add column if not exists free_fire_id text not null default '';
 
 create or replace function public.handle_new_user()
 returns trigger
@@ -49,7 +51,7 @@ create trigger on_auth_user_updated
 after update of email, email_confirmed_at, raw_user_meta_data on auth.users
 for each row execute procedure public.handle_new_user();
 
-insert into public.profiles (id, email, first_name, last_name)
+insert into public.profiles (id, email, email_confirmed_at, first_name, last_name)
 select
   id,
   email,
@@ -110,6 +112,24 @@ create table if not exists public.ai_events (
 alter table public.ai_events add column if not exists content text not null default '';
 alter table public.ai_events add column if not exists tags text[] not null default '{}'::text[];
 alter table public.ai_events add column if not exists image_url text;
+
+create table if not exists public.upcoming_events (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  category text not null,
+  diamond_cost text not null,
+  start_date date not null,
+  description_fr text not null,
+  description_ht text not null,
+  image_url text not null,
+  is_active boolean not null default true,
+  moderation_status text not null default 'pending' check (moderation_status in ('pending', 'approved', 'rejected')),
+  created_at timestamptz not null default now()
+);
+
+alter table public.upcoming_events
+  add column if not exists moderation_status text not null default 'pending'
+  check (moderation_status in ('pending', 'approved', 'rejected'));
 
 create table if not exists public.orders (
   id uuid primary key default gen_random_uuid(),
@@ -177,6 +197,7 @@ create index if not exists idx_revenue_stats_sort_order on public.revenue_stats 
 create index if not exists idx_top_up_packs_sort_order on public.top_up_packs (sort_order);
 create index if not exists idx_gift_cards_sort_order on public.gift_cards (sort_order);
 create index if not exists idx_ai_events_created_at on public.ai_events (created_at desc);
+create index if not exists idx_upcoming_events_active_start_date on public.upcoming_events (start_date asc) where is_active;
 create index if not exists idx_orders_created_at on public.orders (created_at desc);
 create index if not exists idx_gift_card_orders_created_at on public.gift_card_orders (created_at desc);
 create unique index if not exists idx_orders_reference_unique on public.orders (reference) where reference is not null;
@@ -191,6 +212,7 @@ alter table public.revenue_stats enable row level security;
 alter table public.top_up_packs enable row level security;
 alter table public.gift_cards enable row level security;
 alter table public.ai_events enable row level security;
+alter table public.upcoming_events enable row level security;
 alter table public.orders enable row level security;
 alter table public.gift_card_orders enable row level security;
 alter table public.payment_channels enable row level security;
@@ -211,6 +233,9 @@ on public.gift_cards for select to anon, authenticated using (true);
 
 grant select on public.revenue_stats, public.top_up_packs, public.gift_cards, public.ai_events to anon, authenticated;
 
+grant select on public.upcoming_events to anon, authenticated;
+grant insert on public.upcoming_events to service_role;
+
 create or replace function public.is_admin()
 returns boolean
 language sql
@@ -223,6 +248,25 @@ as $$
     where id = auth.uid() and role = 'admin'
   );
 $$;
+
+drop policy if exists "Public can read active upcoming events" on public.upcoming_events;
+create policy "Public can read active upcoming events"
+on public.upcoming_events for select to anon, authenticated
+using (is_active = true and moderation_status = 'approved');
+
+drop policy if exists "Admins can read all upcoming events" on public.upcoming_events;
+create policy "Admins can read all upcoming events"
+on public.upcoming_events for select to authenticated
+using ((select public.is_admin()));
+
+drop policy if exists "Admins can moderate upcoming events" on public.upcoming_events;
+create policy "Admins can moderate upcoming events"
+on public.upcoming_events for update to authenticated
+using ((select public.is_admin()))
+with check ((select public.is_admin()));
+
+revoke update on public.upcoming_events from anon, authenticated;
+grant update (moderation_status) on public.upcoming_events to authenticated;
 
 drop policy if exists "Admins manage top-up packs" on public.top_up_packs;
 create policy "Admins manage top-up packs"
@@ -276,7 +320,7 @@ with check ((select public.is_admin()));
 
 revoke update on public.profiles from authenticated;
 grant select on public.profiles to authenticated;
-grant update (first_name, last_name) on public.profiles to authenticated;
+grant update (first_name, last_name, free_fire_id) on public.profiles to authenticated;
 
 drop policy if exists "Allow public insert to orders" on public.orders;
 drop policy if exists "Customers create their own orders" on public.orders;
@@ -554,4 +598,3 @@ create policy "Allow public insert to gift_card_orders"
 on public.gift_card_orders
 for insert
 with check (true);
-

@@ -1,15 +1,21 @@
-'use client';
+﻿'use client';
 
 import Link from 'next/link';
+import { Eye, EyeOff } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AuthFrame from '../auth-frame';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { createSupabaseClient, getAccessToken, requestPasswordReset, signInWithEmail, updatePassword } from '@/lib/supabase/client';
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState('joueur@bmf.gg');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [recovery, setRecovery] = useState(false);
@@ -57,8 +63,10 @@ export default function LoginPage() {
         });
         if (response.ok) {
           const data = await response.json();
-          router.replace(data.role === 'admin' ? '/admin' : '/topup');
+          router.replace(data.role === 'admin' ? '/admin' : '/player');
           router.refresh();
+        } else {
+          setMessage('Profil utilisateur introuvable. Contactez le support.');
         }
       }
     }
@@ -79,42 +87,64 @@ export default function LoginPage() {
   };
 
   return (
-    <AuthFrame>
-      <div className="mb-7 text-center">
-        <h1 className="text-[28px] font-semibold text-white">{recovery ? 'Reset password' : 'Welcome 👋'}</h1>
-        <p className="mt-3 text-xs text-slate-300">
-          {recovery ? 'Choose a new password for your account.' : 'Please enter your email and password'}
+    <AuthFrame variant="login">
+      <Card className="w-full max-w-[460px] rounded-[28px] border-[#eee6e3] bg-white/95 p-6 shadow-[0_24px_60px_rgba(54,35,29,0.12)] sm:p-8">
+        <div className="mb-7 text-center">
+          <h1 className="text-[32px] font-semibold tracking-tight text-[#d83b34]">{recovery ? 'Nouveau mot de passe' : 'Connexion'}</h1>
+          <p className="mt-2 text-sm text-[#786b67]">
+            {recovery ? 'Choisissez un nouveau mot de passe.' : 'Connectez-vous à votre compte BMF.'}
+          </p>
+        </div>
+
+        <form className="space-y-4" onSubmit={handleSubmit}>
+          <div>
+            <label htmlFor="login-email" className="mb-1.5 block text-sm font-semibold text-[#51433f]">Adresse e-mail</label>
+            <div className="flex h-13 items-center rounded-xl border border-[#e8dfdc] bg-white px-3 focus-within:border-[#e64d42] focus-within:ring-2 focus-within:ring-[#ea4037]/15">
+              <span aria-hidden="true" className="mr-3 text-[#88756e]">@</span>
+              <Input id="login-email" type="email" autoComplete="email" placeholder="vous@exemple.com" value={email} onChange={(event) => setEmail(event.target.value)} className="h-full min-w-0 flex-1 rounded-none border-0 bg-transparent px-0 text-sm shadow-none focus-visible:ring-0 focus-visible:ring-offset-0" required />
+            </div>
+          </div>
+
+          <div>
+            <label htmlFor="login-password" className="mb-1.5 block text-sm font-semibold text-[#51433f]">{recovery ? 'Nouveau mot de passe' : 'Mot de passe'}</label>
+            <div className="flex h-13 items-center rounded-xl border border-[#e8dfdc] bg-white px-3 focus-within:border-[#e64d42] focus-within:ring-2 focus-within:ring-[#ea4037]/15">
+              <span aria-hidden="true" className="mr-3 text-[#88756e]">▣</span>
+              <Input id="login-password" type={showPassword ? 'text' : 'password'} autoComplete={recovery ? 'new-password' : 'current-password'} placeholder="Votre mot de passe" value={password} onChange={(event) => setPassword(event.target.value)} className="h-full min-w-0 flex-1 rounded-none border-0 bg-transparent px-0 text-sm shadow-none focus-visible:ring-0 focus-visible:ring-offset-0" required minLength={recovery ? 8 : undefined} />
+              <button type="button" aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'} aria-pressed={showPassword} className="ml-2 inline-flex h-9 w-9 items-center justify-center rounded-full text-[#5d4d49] transition hover:bg-[#f5eeec] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e64d42]" onClick={() => setShowPassword((current) => !current)}>
+                {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+              </button>
+            </div>
+          </div>
+
+          {!recovery && (
+            <div className="flex items-center justify-between gap-3 pt-1">
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-[#6c5a54]">
+                <input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} className="h-4 w-4 accent-[#ea4037]" />
+                Rester connecté
+              </label>
+              <button type="button" onClick={() => void handleForgotPassword()} disabled={loading} className="text-sm font-medium text-[#d83b34] underline decoration-[#dca39d] underline-offset-2 transition hover:text-[#a92b26] disabled:opacity-60">
+                Mot de passe oublié ?
+              </button>
+            </div>
+          )}
+
+          {message && (
+            <div role="status" className={`rounded-lg border px-3 py-2 text-sm ${message.includes('sent') || message.includes('updated') || message.includes('réussie') ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-red-200 bg-red-50 text-red-700'}`}>
+              {message}
+            </div>
+          )}
+
+          <Button type="submit" disabled={loading} size="lg" className="w-full rounded-xl bg-[#e43b34] text-sm font-bold shadow-[0_10px_22px_rgba(228,59,52,0.22)] hover:bg-[#cf302a]">
+            {loading ? 'Veuillez patienter…' : recovery ? 'Mettre à jour le mot de passe' : 'Se connecter'}
+            <span aria-hidden="true" className="ml-2 text-lg">→</span>
+          </Button>
+        </form>
+
+        <p className="mt-6 text-center text-sm text-[#786b67]">
+          Vous n’avez pas de compte ?{' '}
+          <Link href="/register" className="font-semibold text-[#d83b34] underline decoration-[#dca39d] underline-offset-2 hover:text-[#a92b26]">Inscrivez-vous</Link>
         </p>
-      </div>
-
-      <form className="space-y-3" onSubmit={handleSubmit}>
-        <label className="sr-only" htmlFor="login-email">Email</label>
-        <div className="flex h-11 items-center rounded-md bg-[#2c2f37] px-3 focus-within:ring-1 focus-within:ring-orange-500">
-          <span aria-hidden="true" className="mr-3 text-xs text-slate-400">@</span>
-          <input id="login-email" type="email" autoComplete="email" placeholder="Email" value={email} onChange={(event) => setEmail(event.target.value)} className="h-full min-w-0 flex-1 bg-transparent text-xs text-white outline-none placeholder:text-slate-400" required />
-        </div>
-
-        <label className="sr-only" htmlFor="login-password">{recovery ? 'New password' : 'Password'}</label>
-        <div className="flex h-11 items-center rounded-md bg-[#2c2f37] px-3 focus-within:ring-1 focus-within:ring-orange-500">
-          <span aria-hidden="true" className="mr-3 text-xs text-slate-400">▣</span>
-          <input id="login-password" type="password" autoComplete={recovery ? 'new-password' : 'current-password'} placeholder={recovery ? 'New password' : 'Password'} value={password} onChange={(event) => setPassword(event.target.value)} className="h-full min-w-0 flex-1 bg-transparent text-xs text-white outline-none placeholder:text-slate-400" required minLength={recovery ? 8 : undefined} />
-        </div>
-
-        {!recovery && <div className="flex justify-end pt-1">
-          <button type="button" onClick={() => void handleForgotPassword()} disabled={loading} className="text-xs text-slate-400 underline decoration-slate-500 underline-offset-2 transition hover:text-white disabled:opacity-50">Forgot password?</button>
-        </div>}
-
-        {message && <div role="status" className={`rounded-md border px-3 py-2 text-xs ${message.includes('sent') || message.includes('updated') || message.includes('réussie') ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200' : 'border-rose-400/30 bg-rose-500/10 text-rose-200'}`}>{message}</div>}
-
-        <button type="submit" disabled={loading} className="h-11 w-full rounded-md bg-[#e45b00] text-xs font-semibold text-white transition hover:bg-[#f06a0b] disabled:opacity-60">
-          {loading ? 'Please wait…' : recovery ? 'Update password' : 'Login'}
-        </button>
-      </form>
-
-      <p className="mt-7 text-center text-xs text-slate-300">
-        Don’t have an account?{' '}
-        <Link href="/register" className="font-semibold text-orange-500 underline decoration-orange-500/60 underline-offset-2 hover:text-orange-300">Register now!</Link>
-      </p>
+      </Card>
     </AuthFrame>
   );
 }
