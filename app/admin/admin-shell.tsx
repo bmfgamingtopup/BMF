@@ -132,6 +132,10 @@ export default function AdminShell({ children }: Readonly<{ children: React.Reac
           </div>
         </header>
         <div className="admin-content">{children}</div>
+        <footer className="admin-footer">
+          <span>© 2026 BMF Top Up</span>
+          <span>Espace d’administration</span>
+        </footer>
       </div>
     </div>
   );

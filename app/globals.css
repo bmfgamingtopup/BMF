@@ -361,6 +361,10 @@ a {
   @apply border-t border-white/10 bg-slate-950/80;
 }
 
+body:has(.admin-app) .site-footer {
+  display: none;
+}
+
 .brand-mark {
   position: relative;
   display: inline-flex;
@@ -597,10 +601,28 @@ a {
 }
 
 .admin-workspace {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   min-height: 100vh;
   flex: 1;
   margin-left: 228px;
+}
+
+.admin-content {
+  flex: 1;
+}
+
+.admin-footer {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--admin-line);
+  padding: 12px 30px;
+  color: var(--admin-muted);
+  font-size: 11px;
 }
 
 .admin-topbar {
@@ -694,7 +716,7 @@ a {
 }
 
 .admin-content > main {
-  min-height: calc(100vh - 68px) !important;
+  min-height: calc(100vh - 116px) !important;
   background: transparent !important;
   padding: 28px 30px !important;
   color: var(--admin-text) !important;
@@ -826,8 +848,15 @@ a {
   }
 
   .admin-workspace {
+    display: flex;
+    flex-direction: column;
     min-height: 0;
     margin-left: 0;
+  }
+
+  .admin-footer {
+    padding-right: 16px;
+    padding-left: 16px;
   }
 
   .admin-topbar {
@@ -844,7 +873,7 @@ a {
   }
 
   .admin-content > main {
-    min-height: calc(100vh - 110px) !important;
+    min-height: calc(100vh - 207px) !important;
     padding: 18px 16px !important;
   }
 }
