@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { useEffect, useState, type FormEvent } from 'react';
 import { getAccessToken } from '@/lib/supabase/client';
 import type { AiEvent } from '@/lib/data';
-import UpcomingEventModeration from '@/components/admin/UpcomingEventModeration';
 
 type EventRow = AiEvent & { id: string };
 
@@ -21,7 +20,9 @@ export default function AdminEventsPage() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [savingEventId, setSavingEventId] = useState<string | null>(null);
+  const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
 
   const loadEvents = async () => {
     try {
@@ -75,6 +76,34 @@ export default function AdminEventsPage() {
     }
   };
 
+  const handleDelete = async (event: EventRow) => {
+    if (!window.confirm(`Supprimer définitivement « ${event.title} » ?`)) return;
+
+    setDeletingEventId(event.id);
+    setErrorMessage(null);
+    setInfoMessage(null);
+    try {
+      const accessToken = await getAccessToken();
+      const response = await fetch('/api/admin/events', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
+        body: JSON.stringify({ eventId: event.id }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? 'La suppression a échoué.');
+
+      setEvents((current) => current.filter((item) => item.id !== event.id));
+      if (data.warning) setInfoMessage(data.warning);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'La suppression a échoué.');
+    } finally {
+      setDeletingEventId(null);
+    }
+  };
+
   const handleGenerate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -124,6 +153,7 @@ export default function AdminEventsPage() {
         </div>
 
         {errorMessage && <div role="alert" className="mb-5 rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{errorMessage}</div>}
+        {infoMessage && <div role="status" className="mb-5 rounded-xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">{infoMessage}</div>}
 
         <form onSubmit={(event) => void handleGenerate(event)} className="mb-8 border-y border-white/10 py-6">
           <div className="mb-5">
@@ -151,7 +181,7 @@ export default function AdminEventsPage() {
         ) : events.length > 0 ? (
           <div className="grid gap-5 lg:grid-cols-3">
             {events.map((event) => (
-              <article key={event.title} className="card p-5">
+              <article key={event.id} className="card p-5">
                 <div className="mb-4 flex items-center justify-between">
                   <span className={`status-pill ${statusClass[event.status] ?? 'bg-slate-500/10 text-slate-300'}`}>
                     {event.status}
@@ -201,6 +231,16 @@ export default function AdminEventsPage() {
                     {event.status === 'published' ? 'Publié' : 'Refusé'}
                   </div>
                 )}
+                <div className="mt-5 border-t border-white/10 pt-4 text-right">
+                  <button
+                    type="button"
+                    disabled={deletingEventId === event.id || savingEventId === event.id}
+                    onClick={() => void handleDelete(event)}
+                    className="rounded-md border border-rose-400/30 px-3 py-2 text-xs font-semibold text-rose-200 transition hover:bg-rose-500/10 disabled:opacity-50"
+                  >
+                    {deletingEventId === event.id ? 'Suppression…' : 'Supprimer l’actualité'}
+                  </button>
+                </div>
               </article>
             ))}
           </div>
@@ -209,7 +249,6 @@ export default function AdminEventsPage() {
             Aucun article généré pour le moment. La file d’attente IA s’active dès que le moteur de contenu est connecté.
           </div>
         )}
-        <UpcomingEventModeration />
       </div>
     </main>
   );

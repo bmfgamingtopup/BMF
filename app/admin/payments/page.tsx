@@ -43,9 +43,7 @@ export default function AdminPaymentsPage() {
     void loadChannels();
   }, []);
 
-  const saveChannel = async (event: React.FormEvent<HTMLFormElement>, provider: Provider) => {
-    event.preventDefault();
-    const form = event.currentTarget;
+  const saveChannel = async (form: HTMLFormElement, provider: Provider, removeQr = false) => {
     setSavingProvider(provider);
     setMessages((current) => ({ ...current, [provider]: undefined }));
 
@@ -53,7 +51,8 @@ export default function AdminPaymentsPage() {
       const accessToken = await getAccessToken();
       const formData = new FormData(form);
       formData.set('provider', provider);
-      formData.set('removeQr', formData.has('removeQr') ? 'true' : 'false');
+      formData.set('removeQr', String(removeQr));
+      if (removeQr) formData.delete('qr');
       const response = await fetch('/api/admin/payment-channels', {
         method: 'POST',
         headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
@@ -62,7 +61,10 @@ export default function AdminPaymentsPage() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? 'Enregistrement impossible.');
       setChannels((current) => ({ ...current, [provider]: data.channel }));
-      setMessages((current) => ({ ...current, [provider]: { error: false, text: 'Configuration enregistrée.' } }));
+      setMessages((current) => ({
+        ...current,
+        [provider]: { error: false, text: removeQr ? 'QR supprimé.' : 'Configuration enregistrée.' },
+      }));
       form.reset();
     } catch (error) {
       setMessages((current) => ({
@@ -106,22 +108,31 @@ export default function AdminPaymentsPage() {
                     <h2 className="text-xl font-bold text-white">{providerLabels[provider]}</h2>
                     <span className="text-xs text-slate-500">Clients: numéro ou QR</span>
                   </div>
-                  <form className="space-y-4" onSubmit={(event) => void saveChannel(event, provider)}>
+                  <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void saveChannel(event.currentTarget, provider); }}>
                     <label className="block text-sm text-slate-300">Numéro de réception
                       <input name="receiverPhone" type="tel" autoComplete="tel" value={channel.receiver_phone} onChange={(event) => setChannels((current) => ({ ...current, [provider]: { ...current[provider], receiver_phone: event.target.value } }))} className="field" placeholder="Ex. +509 …" />
                     </label>
                     <label className="block text-sm text-slate-300">Image QR marchand (JPG, PNG ou WebP, 5 Mo max.)
                       <input name="qr" type="file" accept="image/jpeg,image/png,image/webp" className="field" />
                     </label>
-                    {channel.qr_url && (
+                    {channel.qr_path && (
                       <div className="flex items-center gap-4 rounded-xl border border-white/10 bg-white p-3">
-                        <Image src={channel.qr_url} alt={`QR marchand ${providerLabels[provider]}`} width={112} height={112} unoptimized className="h-28 w-28 object-contain" />
+                        {channel.qr_url && <Image src={channel.qr_url} alt={`QR marchand ${providerLabels[provider]}`} width={112} height={112} unoptimized className="h-28 w-28 object-contain" />}
                         <div>
                           <p className="text-sm font-semibold text-slate-900">QR actif</p>
-                          <label className="mt-2 flex items-center gap-2 text-xs text-slate-700">
-                            <input type="checkbox" name="removeQr" className="accent-rose-500" />
-                            Supprimer ce QR
-                          </label>
+                          <button
+                            type="button"
+                            disabled={savingProvider === provider}
+                            onClick={(event) => {
+                              const form = event.currentTarget.form;
+                              if (form && window.confirm(`Supprimer le QR ${providerLabels[provider]} ?`)) {
+                                void saveChannel(form, provider, true);
+                              }
+                            }}
+                            className="mt-2 text-xs font-semibold text-rose-700 underline underline-offset-2 hover:text-rose-900 disabled:opacity-50"
+                          >
+                            Supprimer le QR
+                          </button>
                         </div>
                       </div>
                     )}

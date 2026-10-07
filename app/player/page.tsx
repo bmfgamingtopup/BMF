@@ -19,7 +19,6 @@ import {
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import UpcomingEvents from '@/components/UpcomingEvents';
 import { fetchCatalogData, type AiEvent, type CatalogData } from '@/lib/data';
 import { createSupabaseClient } from '@/lib/supabase/client';
 
@@ -321,7 +320,7 @@ export default function PlayerPage() {
             <div className="space-y-9">
               <div className="mb-5">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300">Nouveautés BMF</p>
-                <h2 className="mt-2 text-2xl font-bold text-white">Actualités & événements</h2>
+                <h2 className="mt-2 text-2xl font-bold text-white">Actualités BMF</h2>
               </div>
               {catalog?.aiEvents.length ? (
                 <div className="grid gap-4 md:grid-cols-2">
@@ -331,10 +330,9 @@ export default function PlayerPage() {
                 <Card className="flex flex-col items-center px-6 py-12 text-center">
                   <span className="flex h-12 w-12 items-center justify-center rounded-full bg-cyan-400/10 text-cyan-200"><Sparkles className="h-5 w-5" aria-hidden="true" /></span>
                   <h3 className="mt-4 font-semibold text-white">Rien de nouveau pour le moment</h3>
-                  <p className="mt-2 max-w-sm text-sm leading-6 text-slate-400">Les nouvelles annonces et événements BMF apparaîtront ici dès leur publication.</p>
+                  <p className="mt-2 max-w-sm text-sm leading-6 text-slate-400">Les actualités BMF apparaîtront ici dès leur publication.</p>
                 </Card>
               )}
-              <UpcomingEvents />
             </div>
           )}
 

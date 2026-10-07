@@ -298,7 +298,12 @@ create policy "Admins insert ai events"
 on public.ai_events for insert to authenticated
 with check ((select public.is_admin()));
 
-grant insert on public.ai_events to authenticated;
+drop policy if exists "Admins delete ai events" on public.ai_events;
+create policy "Admins delete ai events"
+on public.ai_events for delete to authenticated
+using ((select public.is_admin()));
+
+grant insert, delete on public.ai_events to authenticated;
 grant update (status) on public.ai_events to authenticated;
 
 drop policy if exists "Users can view their own profile" on public.profiles;

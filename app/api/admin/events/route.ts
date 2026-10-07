@@ -8,6 +8,23 @@ const imageExtensions: Record<string, string> = {
   'image/png': 'png',
   'image/webp': 'webp',
 };
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function getEventImagePath(imageUrl: string | null): string | null {
+  if (!imageUrl) return null;
+
+  try {
+    const image = new URL(imageUrl);
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    if (!supabaseUrl || image.origin !== new URL(supabaseUrl).origin) return null;
+
+    const bucketPrefix = '/storage/v1/object/public/event-media/';
+    if (!image.pathname.startsWith(bucketPrefix)) return null;
+    return decodeURIComponent(image.pathname.slice(bucketPrefix.length));
+  } catch {
+    return null;
+  }
+}
 
 export async function GET(request: Request) {
   const auth = await authenticateRequest(request, 'admin');
@@ -115,5 +132,48 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ ok: true, event: data });
   } catch {
     return NextResponse.json({ error: 'Requête de modération invalide.' }, { status: 400 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  const auth = await authenticateRequest(request, 'admin');
+  if (auth.response) return auth.response;
+
+  try {
+    const body: unknown = await request.json();
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+      return NextResponse.json({ error: 'Article invalide.' }, { status: 400 });
+    }
+
+    const eventId = (body as { eventId?: unknown }).eventId;
+    if (typeof eventId !== 'string' || !uuidPattern.test(eventId)) {
+      return NextResponse.json({ error: 'Article invalide.' }, { status: 400 });
+    }
+
+    const { data: event, error: lookupError } = await auth.client
+      .from('ai_events')
+      .select('id, image_url')
+      .eq('id', eventId)
+      .maybeSingle();
+    if (lookupError) return NextResponse.json({ error: lookupError.message }, { status: 400 });
+    if (!event) return NextResponse.json({ error: 'Cette actualité n’existe plus.' }, { status: 404 });
+
+    const { error: deleteError } = await auth.client
+      .from('ai_events')
+      .delete()
+      .eq('id', eventId);
+    if (deleteError) return NextResponse.json({ error: deleteError.message }, { status: 400 });
+
+    const imagePath = getEventImagePath(event.image_url);
+    if (imagePath) {
+      const { error: imageError } = await auth.client.storage.from('event-media').remove([imagePath]);
+      if (imageError) {
+        return NextResponse.json({ ok: true, warning: 'Actualité supprimée, mais son image n’a pas pu être effacée.' });
+      }
+    }
+
+    return NextResponse.json({ ok: true });
+  } catch {
+    return NextResponse.json({ error: 'Requête de suppression invalide.' }, { status: 400 });
   }
 }

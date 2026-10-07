@@ -12,6 +12,7 @@ const navigation = [
   { href: '/admin/catalog', label: 'Catalogue', icon: '◇' },
   { href: '/admin/payments', label: 'Paiements QR', icon: '◈' },
   { href: '/admin/events', label: 'Événements IA', icon: '✦' },
+  { href: '/admin/settings', label: 'Compte', icon: '⚙' },
 ];
 
 const pageLabels: Record<string, string> = {
@@ -20,6 +21,7 @@ const pageLabels: Record<string, string> = {
   '/admin/catalog': 'Catalogue',
   '/admin/payments': 'Paiements QR',
   '/admin/events': 'Événements IA',
+  '/admin/settings': 'Compte',
 };
 
 export default function AdminShell({ children }: Readonly<{ children: React.ReactNode }>) {
