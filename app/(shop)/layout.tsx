@@ -16,7 +16,7 @@ export default function ShopLayout({ children }: Readonly<{ children: React.Reac
       if (!active) return;
 
       if (!accessToken) {
-        setAccess('allowed');
+        router.replace('/login');
         return;
       }
 

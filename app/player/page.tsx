@@ -43,6 +43,9 @@ type PlayerOrder = {
   status: 'awaiting_payment' | 'pending' | 'paid' | 'rejected';
   order_type: 'topup' | 'giftcard';
   fulfillment_status: 'waiting_payment' | 'waiting_stock' | 'delivered' | 'legacy';
+  redeem_status: 'none' | 'processing' | 'completed' | 'failed';
+  redeem_uid: string | null;
+  redeem_error: string | null;
   created_at: string;
   delivery_code: string | null;
 };
@@ -117,6 +120,10 @@ export default function PlayerPage() {
   const [unreadDeliveryIds, setUnreadDeliveryIds] = useState<string[]>([]);
   const [orderRefreshMessage, setOrderRefreshMessage] = useState<string | null>(null);
   const [copyingCodeId, setCopyingCodeId] = useState<string | null>(null);
+  const [redeemUids, setRedeemUids] = useState<Record<string, string>>({});
+  const [redeemMessages, setRedeemMessages] = useState<Record<string, string>>({});
+  const [redeemingId, setRedeemingId] = useState<string | null>(null);
+  const [redeemOpenId, setRedeemOpenId] = useState<string | null>(null);
   const knownDeliveredOrders = useRef<Set<string>>(new Set());
   const [surveys, setSurveys] = useState<PlayerSurvey[]>([]);
   const [surveySelections, setSurveySelections] = useState<Record<string, number>>({});
@@ -314,6 +321,76 @@ export default function PlayerPage() {
     }
   };
 
+  const redeemPin = async (orderId: string) => {
+    const uid = (redeemUids[orderId] ?? profile?.freeFireId ?? '').trim();
+    setRedeemingId(orderId);
+    setRedeemMessages((current) => ({ ...current, [orderId]: '' }));
+    try {
+      const client = createSupabaseClient();
+      const { data: sessionData } = client ? await client.auth.getSession() : { data: { session: null } };
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) throw new Error('Reconnecte-toi pour utiliser ton PIN.');
+
+      const response = await fetch('/api/player/redeem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ orderId, uid }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? 'Utilisation du PIN impossible.');
+      setOrders((current) => current.map((order) => order.id === orderId
+        ? { ...order, redeem_status: data.redeemStatus, redeem_uid: uid, redeem_error: null }
+        : order));
+    } catch (redeemError) {
+      setRedeemMessages((current) => ({
+        ...current,
+        [orderId]: redeemError instanceof Error ? redeemError.message : 'Utilisation du PIN impossible.',
+      }));
+    } finally {
+      setRedeemingId(null);
+    }
+  };
+
+  const openRedeem = async (order: PlayerOrder) => {
+    if (order.delivery_code) await copyDeliveryCode(order.id, order.delivery_code);
+    setRedeemOpenId(order.id);
+  };
+
+  const renderRedeem = (order: PlayerOrder) => {
+    if (order.order_type !== 'topup') return null;
+    if (order.redeem_status === 'completed') {
+      return <p className="mt-3 border-t border-white/10 pt-3 text-xs font-semibold text-emerald-300">PIN utilisé · diamants encaissés sur l’UID {order.redeem_uid}.</p>;
+    }
+    if (redeemOpenId !== order.id) {
+      return (
+        <div className="mt-3 border-t border-white/10 pt-3">
+          <button type="button" onClick={() => void openRedeem(order)} className="w-full rounded-lg bg-emerald-400 px-3 py-2 text-sm font-bold text-slate-950 transition hover:bg-emerald-300">
+            Utiliser ce PIN (Redeem)
+          </button>
+        </div>
+      );
+    }
+    return (
+      <div className="mt-3 space-y-3 border-t border-white/10 pt-3">
+        <p className="text-xs text-slate-300">Ton PIN est copié. Colle-le dans le champ ci-dessous, saisis ton UID et valide pour recevoir tes diamants.</p>
+        <iframe src="https://redeempins.com/" title="Redime tus pines" className="h-[520px] w-full rounded-xl border border-white/10 bg-white" referrerPolicy="no-referrer" sandbox="allow-scripts allow-forms allow-same-origin allow-popups" />
+        <a href="https://redeempins.com/" target="_blank" rel="noopener noreferrer" className="block text-center text-xs text-emerald-300 underline">Le formulaire ne s’affiche pas ? Ouvre-le dans un nouvel onglet</a>
+        <label className="block text-xs text-slate-400">UID Free Fire utilisé
+          <input
+            inputMode="numeric"
+            className="mt-1.5 w-full rounded-lg border border-white/10 bg-[#0b1020] px-3 py-2 text-sm text-white outline-none focus:border-emerald-300"
+            value={redeemUids[order.id] ?? profile?.freeFireId ?? ''}
+            onChange={(event) => setRedeemUids((current) => ({ ...current, [order.id]: event.target.value }))}
+            placeholder="Ex. 1234567890"
+          />
+        </label>
+        {redeemMessages[order.id] && <p role="alert" className="text-xs text-rose-300">{redeemMessages[order.id]}</p>}
+        <button type="button" disabled={redeemingId === order.id} onClick={() => void redeemPin(order.id)} className="w-full rounded-lg border border-emerald-300/30 bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-500/20 disabled:opacity-50">
+          {redeemingId === order.id ? 'Enregistrement…' : 'J’ai encaissé mes diamants'}
+        </button>
+      </div>
+    );
+  };
   const handleSignOut = async () => {
     const client = createSupabaseClient();
     if (!client) {
@@ -452,22 +529,6 @@ export default function PlayerPage() {
                 </Link>
               </div>
 
-              <div>
-                <div className="mb-4 flex items-end justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300">À découvrir</p>
-                    <h2 className="mt-2 text-xl font-bold text-white">Les dernières actualités</h2>
-                  </div>
-                  <button type="button" onClick={() => setActiveTab('news')} className="text-xs font-semibold text-cyan-200 hover:text-white">Tout voir →</button>
-                </div>
-                {catalog?.aiEvents.length ? (
-                  <div className="grid gap-4 md:grid-cols-2">
-                    {catalog.aiEvents.slice(0, 2).map((event) => <NewsCard key={event.id ?? event.title} event={event} />)}
-                  </div>
-                ) : (
-                  <Card className="border-white/10 bg-[#111827]/80 p-5 text-sm text-slate-400">Aucune actualité publiée pour le moment. Reviens bientôt pour découvrir les nouveautés BMF.</Card>
-                )}
-              </div>
             </div>
           )}
 
@@ -499,6 +560,7 @@ export default function PlayerPage() {
                         </button>
                       </div>
                       <code className="mt-2 block break-all text-sm font-bold tracking-wide text-white">{order.delivery_code}</code>
+                      {renderRedeem(order)}
                     </div>
                   )}
                 </article>
@@ -537,6 +599,7 @@ export default function PlayerPage() {
                           </button>
                         </div>
                         <code className="mt-2 block break-all text-sm font-bold tracking-wide text-white">{order.delivery_code}</code>
+                        {renderRedeem(order)}
                       </div>
                     ) : (
                       <p className="mt-4 text-sm text-amber-200">Le code est en préparation. Consulte tes commandes dans un instant.</p>

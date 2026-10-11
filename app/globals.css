@@ -885,3 +885,16 @@ body:has(.admin-app) .site-footer {
     padding: 18px 16px !important;
   }
 }
+
+@keyframes whatsapp-levitate {
+  0%, 100% { transform: translateY(0); box-shadow: 0 10px 22px rgba(0, 0, 0, 0.35); }
+  50% { transform: translateY(-10px); box-shadow: 0 22px 28px rgba(0, 0, 0, 0.25); }
+}
+
+.whatsapp-float {
+  animation: whatsapp-levitate 2.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .whatsapp-float { animation: none; }
+}

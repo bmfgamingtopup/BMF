@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import SiteFooter from '@/components/site-footer';
+import { WhatsAppSupport } from '@/components/whatsapp-support';
 import SiteAnalytics from './site-analytics';
 import './globals.css';
 
@@ -34,6 +35,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <SiteAnalytics />
         {children}
         <SiteFooter />
+        <WhatsAppSupport />
       </body>
     </html>
   );

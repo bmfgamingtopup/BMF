@@ -180,6 +180,20 @@ create table if not exists public.payment_channels (
   updated_at timestamptz not null default now()
 );
 
+-- Identifiants API MonCash / NatCash : table réservée aux administrateurs (jamais lisible par les clients).
+create table if not exists public.payment_api_settings (
+  provider text primary key check (provider in ('moncash', 'natcash')),
+  is_enabled boolean not null default false,
+  environment text not null default 'sandbox' check (environment in ('sandbox', 'live')),
+  api_base_url text not null default '',
+  client_id text not null default '',
+  client_secret text not null default '',
+  merchant_id text not null default '',
+  webhook_secret text not null default '',
+  updated_by uuid references public.profiles (id) on delete set null,
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.digital_stock (
   id uuid primary key default gen_random_uuid(),
   catalog_type text not null check (catalog_type in ('topup', 'giftcard')),
@@ -417,6 +431,45 @@ $$;
 revoke all on function public.confirm_order_payment(uuid) from public, anon;
 grant execute on function public.confirm_order_payment(uuid) to authenticated;
 
+alter table public.orders add column if not exists redeem_status text not null default 'none'
+  check (redeem_status in ('none', 'processing', 'completed', 'failed'));
+alter table public.orders add column if not exists redeem_uid text;
+alter table public.orders add column if not exists redeem_error text;
+alter table public.orders add column if not exists redeemed_at timestamptz;
+
+drop function if exists public.begin_pin_redemption(uuid, text);
+
+create or replace function public.complete_pin_redemption(p_order_id uuid, p_game_uid text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Connexion requise.';
+  end if;
+  if p_game_uid !~ '^[0-9]{5,15}$' then
+    raise exception 'UID Free Fire invalide.';
+  end if;
+
+  update public.orders
+  set redeem_status = 'completed', redeem_uid = p_game_uid, redeem_error = null, redeemed_at = now()
+  where id = p_order_id
+    and user_id = auth.uid()
+    and order_type = 'topup'
+    and fulfillment_status = 'delivered'
+    and redeem_status <> 'completed';
+
+  if not found then
+    raise exception 'Ce PIN ne peut pas être marqué comme utilisé.';
+  end if;
+end;
+$$;
+
+revoke all on function public.complete_pin_redemption(uuid, text) from public, anon;
+grant execute on function public.complete_pin_redemption(uuid, text) to authenticated;
+
 drop policy if exists "Public can read active upcoming events" on public.upcoming_events;
 create policy "Public can read active upcoming events"
 on public.upcoming_events for select to anon, authenticated
@@ -521,6 +574,56 @@ on public.orders for update to authenticated
 using ((select public.is_admin()))
 with check ((select public.is_admin()));
 
+-- Empêche un client de forger le prix ou l'état d'une commande via l'API directe.
+create or replace function public.enforce_order_catalog_values()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_pack public.top_up_packs;
+  v_card public.gift_cards;
+begin
+  if (select public.is_admin()) then
+    return new;
+  end if;
+
+  if new.order_type = 'topup' then
+    select * into v_pack from public.top_up_packs where id = new.product_id;
+    if not found then
+      raise exception 'Produit indisponible.';
+    end if;
+    new.pack_name := v_pack.name;
+    new.diamond_count := v_pack.diamonds;
+    new.amount := regexp_replace(v_pack.price, '\mFCFA\M', 'HTG', 'gi');
+  elsif new.order_type = 'giftcard' then
+    select * into v_card from public.gift_cards where id = new.product_id;
+    if not found then
+      raise exception 'Produit indisponible.';
+    end if;
+    new.pack_name := v_card.type || ' ' || v_card.name;
+    new.diamond_count := v_card.value;
+    new.amount := regexp_replace(v_card.value, '\mFCFA\M', 'HTG', 'gi');
+  else
+    raise exception 'Type de commande invalide.';
+  end if;
+
+  new.status := 'awaiting_payment';
+  new.fulfillment_status := 'waiting_payment';
+  new.redeem_status := 'none';
+  new.redeem_uid := null;
+  new.redeem_error := null;
+  new.redeemed_at := null;
+  return new;
+end;
+$$;
+
+drop trigger if exists orders_enforce_catalog_values on public.orders;
+create trigger orders_enforce_catalog_values
+before insert on public.orders
+for each row execute function public.enforce_order_catalog_values();
+
 revoke update on public.orders from anon, authenticated;
 grant select, insert on public.orders to authenticated;
 grant update (transaction_id, payment_phone, proof_path, status, reviewed_by, reviewed_at)
@@ -542,6 +645,17 @@ using ((select public.is_admin()))
 with check ((select public.is_admin()));
 
 grant select, insert, update on public.payment_channels to authenticated;
+
+alter table public.payment_api_settings enable row level security;
+
+drop policy if exists "Admins manage payment api settings" on public.payment_api_settings;
+create policy "Admins manage payment api settings"
+on public.payment_api_settings for all to authenticated
+using ((select public.is_admin()))
+with check ((select public.is_admin()));
+
+revoke all on public.payment_api_settings from anon;
+grant select, insert, update on public.payment_api_settings to authenticated;
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('merchant-qrs', 'merchant-qrs', false, 5242880, array['image/jpeg', 'image/png', 'image/webp'])

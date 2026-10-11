@@ -4,6 +4,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { getAccessToken } from '@/lib/supabase/client';
+import { PaymentApiSettings } from './payment-api-settings';
 
 type Provider = 'moncash' | 'natcash';
 type PaymentChannel = { provider: Provider; receiver_phone: string; qr_path: string | null; qr_url: string | null };
@@ -146,6 +147,8 @@ export default function AdminPaymentsPage() {
             })}
           </div>
         )}
+
+        <PaymentApiSettings />
       </div>
     </main>
   );

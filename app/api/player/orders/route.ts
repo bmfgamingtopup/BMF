@@ -7,7 +7,7 @@ export async function GET(request: Request) {
 
   const { data: orders, error } = await auth.client
     .from('orders')
-    .select('id, reference, pack_name, amount, status, order_type, fulfillment_status, created_at')
+    .select('id, reference, pack_name, amount, status, order_type, fulfillment_status, redeem_status, redeem_uid, redeem_error, created_at')
     .eq('user_id', auth.user.id)
     .order('created_at', { ascending: false });
 
