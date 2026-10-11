@@ -895,6 +895,14 @@ body:has(.admin-app) .site-footer {
   animation: whatsapp-levitate 2.6s ease-in-out infinite;
 }
 
+@media (max-width: 640px) {
+  .whatsapp-float {
+    bottom: calc(6rem + env(safe-area-inset-bottom, 0px));
+    right: calc(1rem + env(safe-area-inset-right, 0px));
+    z-index: 50;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .whatsapp-float { animation: none; }
 }
