@@ -7,7 +7,8 @@ BMF est une plateforme web moderne, rapide et optimisée PWA pour l’achat de r
 - Boutique de recharges Free Fire avec saisie du Player ID / UID
 - Achat de cartes cadeaux Google Play, iTunes et autres plateformes
 - Tableau de bord client avec historique des commandes
-- Back office admin pour validation des paiements
+- Espace joueur avec barre de navigation fixe, notifications de livraison et sondages
+- Back office admin pour validation des paiements, gestion des codes numériques et création de sondages
 - Hub gaming IA avec articles en statut draft pour modération
 - Design gaming dark mode, responsive et compatible PWA
 
@@ -53,9 +54,12 @@ GROQ_VISION_MODEL=qwen/qwen3.8-27b
 
 4. Ouvrez `/admin/payments` et configurez, pour chaque fournisseur, le numéro de réception, le QR officiel ou les deux. Les variables `NEXT_PUBLIC_MONCASH_RECEIVER` et `NEXT_PUBLIC_NATCASH_RECEIVER` restent un fallback pour les paiements par numéro si aucune configuration de ce fournisseur n’a été créée.
 
-5. Ouvrez `/admin/catalog` pour ajouter, modifier ou supprimer les packs de diamants Free Fire et les cartes cadeaux. Les prix saisis sont en gourdes haïtiennes (HTG) et les modifications sont enregistrées dans Supabase. Les anciennes fiches portant le suffixe FCFA sont réétiquetées sans conversion de leur montant ; vérifiez et ajustez leurs prix dans le catalogue admin.
+5. Ouvrez `/admin/catalog` pour ajouter, modifier ou supprimer les packs de diamants Free Fire et les cartes cadeaux. Les prix saisis sont en gourdes haïtiennes (HTG) et les modifications sont enregistrées dans Supabase. L’archivage range une fiche dans `/admin/catalog-history` pour alléger la configuration admin, mais ne la désactive pas : elle reste visible et achetable par les joueurs, et disponible pour la gestion du stock. Les anciennes fiches portant le suffixe FCFA sont réétiquetées sans conversion de leur montant ; vérifiez et ajustez leurs prix dans le catalogue admin.
 
-Le paiement est un flux de transfert manuel: le client choisit MonCash/NatCash et numéro/QR, puis chaque commande reçoit une référence `BMF-MC-…` ou `BMF-NC-…`. Il fournit l’ID de transaction, son téléphone et une preuve JPG/PNG/WebP/PDF (5 Mo maximum). L’admin doit vérifier le reçu et le transfert dans le portefeuille marchand avant de confirmer `paid` ou de refuser. La vérification automatique via API MonCash/NatCash n’est pas activée; elle nécessite les identifiants marchands et l’accès aux API/webhooks des fournisseurs.
+6. Ouvrez `/admin/stock` et associez à chaque offre ses codes PIN réels, un code par ligne. À la confirmation du paiement, un code de cette offre est attribué une seule fois et apparaît dans l’onglet **Commandes** du joueur. Si aucun code n’est disponible, le paiement reste confirmé et la livraison est signalée comme « stock attendu » ; l’ajout ultérieur de codes attribue automatiquement les commandes correspondantes.
+7. Ouvrez `/admin/surveys` pour créer des questions et choix de réponse. Les joueurs connectés répondent depuis l’onglet **Sondages** et ne peuvent voter qu’une fois par sondage.
+
+Le paiement reste un flux de transfert manuel : le client choisit MonCash/NatCash et numéro/QR, puis chaque commande reçoit une référence `BMF-MC-…` ou `BMF-NC-…`. Il fournit l’ID de transaction, son téléphone et une preuve JPG/PNG/WebP/PDF (5 Mo maximum). L’admin doit vérifier le reçu et le transfert dans le portefeuille marchand avant de confirmer `paid` ou de refuser. La vérification automatique via API MonCash/NatCash n’est pas activée ; elle nécessite les identifiants marchands et l’accès aux API/webhooks des fournisseurs. La livraison automatique décrite ci-dessus distribue le stock préchargé par l’admin ; elle ne crédite pas directement un compte Free Fire via UID.
 
 Les routes d’administration et les opérations de commande vérifient le rôle Supabase côté serveur. Dans `/admin/events`, un administrateur fournit des consignes, des informations et éventuellement une image pour générer un brouillon. Configurez `GROQ_API_KEY` ; pour la génération avec image, le modèle Groq vision est configurable via `GROQ_VISION_MODEL`. Les brouillons et leurs images sont enregistrés dans Supabase puis peuvent être publiés manuellement. Aucun cron ni clé `service_role` n’est nécessaire.
 

@@ -13,6 +13,7 @@ type OrderRow = {
   pack_name: string;
   amount: string;
   status: 'awaiting_payment' | 'pending' | 'paid' | 'rejected';
+  fulfillment_status: 'waiting_payment' | 'waiting_stock' | 'delivered' | 'legacy';
   transaction_id: string | null;
   payment_phone: string | null;
   proof_url: string | null;
@@ -33,11 +34,19 @@ const statusLabel: Record<string, string> = {
   rejected: 'Refusée',
 };
 
+const fulfillmentLabel: Record<string, string> = {
+  waiting_payment: 'Après paiement',
+  waiting_stock: 'Payée · stock attendu',
+  delivered: 'Code livré',
+  legacy: 'Ancienne commande',
+};
+
 export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [savingOrderId, setSavingOrderId] = useState<string | null>(null);
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
 
   const loadOrders = async () => {
     try {
@@ -90,6 +99,12 @@ export default function AdminOrdersPage() {
       });
 
       if (response.ok) {
+        const data = await response.json();
+        setInfoMessage(status === 'paid'
+          ? data.order?.fulfillment_status === 'delivered'
+            ? 'Paiement confirmé et code attribué au joueur.'
+            : 'Paiement confirmé. La commande attend un code dans le stock.'
+          : 'Commande refusée.');
         await loadOrders();
       } else {
         const data = await response.json();
@@ -142,6 +157,7 @@ export default function AdminOrdersPage() {
         </div>
 
         {errorMessage && <div role="alert" className="mb-5 rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{errorMessage}</div>}
+        {infoMessage && <div role="status" className="mb-5 rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">{infoMessage}</div>}
 
         {loading ? (
           <div className="card p-10 text-center text-slate-300">Chargement des commandes…</div>
@@ -160,6 +176,7 @@ export default function AdminOrdersPage() {
                     <th className="px-6 py-4">Transaction</th>
                     <th className="px-6 py-4">Preuve</th>
                     <th className="px-6 py-4">Statut</th>
+                    <th className="px-6 py-4">Livraison</th>
                     <th className="px-6 py-4 text-right">Action</th>
                   </tr>
                 </thead>
@@ -183,6 +200,9 @@ export default function AdminOrdersPage() {
                         <span className={`status-pill ${badgeClass[order.status] ?? 'bg-slate-500/10 text-slate-300'}`}>
                           {statusLabel[order.status] ?? order.status}
                         </span>
+                      </td>
+                      <td className="px-6 py-4 text-xs text-slate-300">
+                        {fulfillmentLabel[order.fulfillment_status] ?? order.fulfillment_status}
                       </td>
                       <td className="px-6 py-4 text-right">
                         {order.status === 'pending' ? (

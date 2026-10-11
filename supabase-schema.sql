@@ -81,6 +81,7 @@ create table if not exists public.top_up_packs (
   diamonds text not null default '0',
   price text not null default '0 HTG',
   sort_order integer not null default 0,
+  is_archived boolean not null default false,
   created_at timestamptz not null default now()
 );
 
@@ -90,9 +91,12 @@ create table if not exists public.gift_cards (
   name text not null,
   value text not null default '0 HTG',
   sort_order integer not null default 0,
+  is_archived boolean not null default false,
   created_at timestamptz not null default now()
 );
 
+alter table public.top_up_packs add column if not exists is_archived boolean not null default false;
+alter table public.gift_cards add column if not exists is_archived boolean not null default false;
 alter table public.top_up_packs alter column price set default '0 HTG';
 alter table public.gift_cards alter column value set default '0 HTG';
 
@@ -151,6 +155,13 @@ alter table public.orders add column if not exists proof_path text;
 alter table public.orders add column if not exists reviewed_by uuid references public.profiles (id) on delete set null;
 alter table public.orders add column if not exists reviewed_at timestamptz;
 alter table public.orders add column if not exists payment_channel text not null default 'phone';
+alter table public.orders add column if not exists product_id uuid;
+alter table public.orders add column if not exists fulfillment_status text not null default 'waiting_payment'
+  check (fulfillment_status in ('waiting_payment', 'waiting_stock', 'delivered', 'legacy'));
+
+update public.orders
+set fulfillment_status = 'legacy'
+where status = 'paid' and product_id is null and fulfillment_status = 'waiting_payment';
 
 alter table public.orders drop constraint if exists orders_status_check;
 update public.orders set status = 'paid' where status = 'validated';
@@ -167,6 +178,36 @@ create table if not exists public.payment_channels (
   qr_path text,
   updated_by uuid references public.profiles (id) on delete set null,
   updated_at timestamptz not null default now()
+);
+
+create table if not exists public.digital_stock (
+  id uuid primary key default gen_random_uuid(),
+  catalog_type text not null check (catalog_type in ('topup', 'giftcard')),
+  product_id uuid not null,
+  code text not null,
+  status text not null default 'available' check (status in ('available', 'assigned')),
+  order_id uuid unique references public.orders (id) on delete set null,
+  created_at timestamptz not null default now(),
+  assigned_at timestamptz,
+  unique (catalog_type, product_id, code)
+);
+
+create table if not exists public.player_surveys (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  question text not null,
+  options text[] not null check (cardinality(options) between 2 and 6),
+  is_active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.survey_votes (
+  id uuid primary key default gen_random_uuid(),
+  survey_id uuid not null references public.player_surveys (id) on delete cascade,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  option_index integer not null check (option_index >= 0),
+  created_at timestamptz not null default now(),
+  unique (survey_id, user_id)
 );
 
 create table if not exists public.site_visitors (
@@ -203,6 +244,10 @@ create index if not exists idx_gift_card_orders_created_at on public.gift_card_o
 create unique index if not exists idx_orders_reference_unique on public.orders (reference) where reference is not null;
 create unique index if not exists idx_orders_transaction_unique on public.orders (payment_method, lower(transaction_id)) where transaction_id is not null;
 create index if not exists idx_orders_user_created_at on public.orders (user_id, created_at desc);
+create index if not exists idx_digital_stock_available on public.digital_stock (catalog_type, product_id, created_at) where status = 'available';
+create index if not exists idx_digital_stock_order_id on public.digital_stock (order_id) where order_id is not null;
+create index if not exists idx_player_surveys_active on public.player_surveys (created_at desc) where is_active;
+create index if not exists idx_survey_votes_survey_id on public.survey_votes (survey_id);
 create index if not exists idx_site_visits_created_at on public.site_visits (created_at desc);
 create index if not exists idx_site_visits_visitor_path_created_at on public.site_visits (visitor_id, path, created_at desc);
 create index if not exists idx_site_visitors_last_seen on public.site_visitors (last_seen desc);
@@ -218,6 +263,9 @@ alter table public.gift_card_orders enable row level security;
 alter table public.payment_channels enable row level security;
 alter table public.site_visitors enable row level security;
 alter table public.site_visits enable row level security;
+alter table public.digital_stock enable row level security;
+alter table public.player_surveys enable row level security;
+alter table public.survey_votes enable row level security;
 
 drop policy if exists "Public can read revenue stats" on public.revenue_stats;
 create policy "Public can read revenue stats"
@@ -248,6 +296,126 @@ as $$
     where id = auth.uid() and role = 'admin'
   );
 $$;
+
+drop policy if exists "Admins manage digital stock" on public.digital_stock;
+create policy "Admins manage digital stock"
+on public.digital_stock for all to authenticated
+using ((select public.is_admin()))
+with check ((select public.is_admin()));
+
+drop policy if exists "Customers read their delivered codes" on public.digital_stock;
+create policy "Customers read their delivered codes"
+on public.digital_stock for select to authenticated
+using (
+  status = 'assigned'
+  and exists (
+    select 1 from public.orders
+    where orders.id = digital_stock.order_id
+      and orders.user_id = (select auth.uid())
+      and orders.fulfillment_status = 'delivered'
+  )
+);
+
+grant select, insert, update, delete on public.digital_stock to authenticated;
+
+drop policy if exists "Players read active surveys" on public.player_surveys;
+create policy "Players read active surveys"
+on public.player_surveys for select to authenticated
+using (is_active or (select public.is_admin()));
+
+drop policy if exists "Admins manage player surveys" on public.player_surveys;
+create policy "Admins manage player surveys"
+on public.player_surveys for all to authenticated
+using ((select public.is_admin()))
+with check ((select public.is_admin()));
+
+drop policy if exists "Players read their own survey votes" on public.survey_votes;
+create policy "Players read their own survey votes"
+on public.survey_votes for select to authenticated
+using (user_id = (select auth.uid()) or (select public.is_admin()));
+
+drop policy if exists "Players vote once in active surveys" on public.survey_votes;
+create policy "Players vote once in active surveys"
+on public.survey_votes for insert to authenticated
+with check (
+  user_id = (select auth.uid())
+  and exists (
+    select 1 from public.player_surveys
+    where player_surveys.id = survey_votes.survey_id
+      and player_surveys.is_active
+      and survey_votes.option_index < cardinality(player_surveys.options)
+  )
+);
+
+grant select, insert, update, delete on public.player_surveys to authenticated;
+grant select, insert on public.survey_votes to authenticated;
+
+create or replace function public.confirm_order_payment(p_order_id uuid)
+returns table (order_id uuid, status text, fulfillment_status text)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  current_order public.orders%rowtype;
+  stock_id uuid;
+begin
+  if not public.is_admin() then
+    raise exception 'Accès réservé aux administrateurs.';
+  end if;
+
+  select * into current_order
+  from public.orders
+  where id = p_order_id
+  for update;
+
+  if not found then
+    raise exception 'Commande introuvable.';
+  end if;
+
+  if current_order.status = 'pending' then
+    update public.orders
+    set status = 'paid',
+        reviewed_by = auth.uid(),
+        reviewed_at = now(),
+        fulfillment_status = 'waiting_stock'
+    where id = p_order_id;
+  elsif current_order.status <> 'paid' or current_order.fulfillment_status <> 'waiting_stock' then
+    raise exception 'Commande déjà traitée ou non livrable.';
+  end if;
+
+  if current_order.product_id is not null then
+    select id into stock_id
+    from public.digital_stock
+    where catalog_type = current_order.order_type
+      and product_id = current_order.product_id
+      and status = 'available'
+    order by created_at, id
+    limit 1
+    for update skip locked;
+
+    if stock_id is not null then
+      update public.digital_stock
+      set status = 'assigned',
+          order_id = p_order_id,
+          assigned_at = now()
+      where id = stock_id;
+
+      update public.orders
+      set fulfillment_status = 'delivered'
+      where id = p_order_id;
+    end if;
+  end if;
+
+  return query
+  select orders.id, orders.status, orders.fulfillment_status
+  from public.orders
+  where orders.id = p_order_id;
+end;
+$$;
+
+revoke all on function public.confirm_order_payment(uuid) from public, anon;
+grant execute on function public.confirm_order_payment(uuid) to authenticated;
 
 drop policy if exists "Public can read active upcoming events" on public.upcoming_events;
 create policy "Public can read active upcoming events"

@@ -89,6 +89,20 @@ export default function AdminCatalogPage() {
     }
   };
 
+  const toggleArchiveProduct = async (catalog: Catalog, id: string, name: string, isArchived: boolean) => {
+    setSavingKey(id);
+    setFeedback(null);
+    try {
+      await mutateCatalog('PATCH', { catalog, id, is_archived: isArchived });
+      await refreshCatalog();
+      setFeedback({ error: false, text: isArchived ? 'Offre archivée.' : 'Offre restaurée dans le catalogue actif.' });
+    } catch (error) {
+      setFeedback({ error: true, text: error instanceof Error ? error.message : 'Mise à jour impossible.' });
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
   const deleteProduct = async (catalog: Catalog, id: string, name: string) => {
     if (!window.confirm(`Supprimer « ${name} » du catalogue ?`)) return;
     setSavingKey(id);
@@ -110,7 +124,7 @@ export default function AdminCatalogPage() {
           <header className="mb-7">
             <p className="text-xs uppercase tracking-[0.18em] text-cyan-300">Boutique</p>
             <h1 className="mt-2 text-3xl font-black text-white">Catalogue et tarifs</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">Les modifications sont enregistrées dans Supabase et visibles sur le site dès leur sauvegarde.</p>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">Gère les offres de la boutique. Archiver une offre la déplace uniquement dans l’historique administratif; elle reste disponible aux joueurs.</p>
           </header>
 
           {feedback && <p role="status" className={`mb-5 rounded-md border px-4 py-3 text-sm ${feedback.error ? 'border-rose-400/30 bg-rose-500/10 text-rose-200' : 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200'}`}>{feedback.text}</p>}
@@ -120,7 +134,7 @@ export default function AdminCatalogPage() {
               <section className="card p-5 sm:p-6">
                 <header className="mb-5 flex items-baseline justify-between gap-3 border-b border-white/10 pb-4">
                   <h2 className="text-xl font-bold text-white">Diamants Free Fire</h2>
-                  <span className="text-xs text-slate-500">{topUpPacks.length} packs</span>
+                  <span className="text-xs text-slate-500">{topUpPacks.length} packs actifs</span>
                 </header>
 
                 <form className="grid gap-3 border-b border-white/10 pb-5 sm:grid-cols-2" onSubmit={(event) => void saveProduct(event, 'topup')}>
@@ -143,7 +157,7 @@ export default function AdminCatalogPage() {
 
                 <div className="divide-y divide-white/10">
                   {topUpPacks.map((pack) => (
-                    <form key={pack.id} className="grid gap-3 py-4 sm:grid-cols-2 xl:grid-cols-[0.7fr_1.2fr_0.8fr_0.9fr_auto] xl:items-end" onSubmit={(event) => void saveProduct(event, 'topup', pack.id)}>
+                    <form key={pack.id} className="grid gap-3 py-4 sm:grid-cols-2 xl:grid-cols-[0.7fr_1.2fr_0.8fr_0.9fr_auto_auto] xl:items-end" onSubmit={(event) => void saveProduct(event, 'topup', pack.id)}>
                       <label className={labelClass}>Tag
                         <input className={inputClass} name="tag" defaultValue={pack.tag} required maxLength={40} />
                       </label>
@@ -158,18 +172,19 @@ export default function AdminCatalogPage() {
                       </label>
                       <div className="flex gap-2 sm:col-span-2 xl:col-span-1">
                         <button type="submit" disabled={savingKey !== null} className="secondary-btn flex-1 px-3 py-2 text-xs disabled:opacity-50">{savingKey === pack.id ? '…' : 'Enregistrer'}</button>
-                        <button type="button" disabled={savingKey !== null} onClick={() => void deleteProduct('topup', pack.id, pack.name)} className="rounded-md border border-rose-400/25 px-3 py-2 text-xs font-semibold text-rose-200 hover:bg-rose-500/10 disabled:opacity-50">Supprimer</button>
+                        <button type="button" disabled={savingKey !== null} onClick={() => void toggleArchiveProduct('topup', pack.id, pack.name, true)} className="rounded-md border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-500/15 disabled:opacity-50">Archiver</button>
                       </div>
+                      <button type="button" disabled={savingKey !== null} onClick={() => void deleteProduct('topup', pack.id, pack.name)} className="rounded-md border border-rose-400/25 px-3 py-2 text-xs font-semibold text-rose-200 hover:bg-rose-500/10 disabled:opacity-50">Supprimer</button>
                     </form>
                   ))}
-                  {!topUpPacks.length && <p className="py-5 text-sm text-slate-500">Aucun pack configuré.</p>}
+                  {!topUpPacks.length && <p className="py-5 text-sm text-slate-500">Aucun pack actif.</p>}
                 </div>
               </section>
 
               <section className="card p-5 sm:p-6">
                 <header className="mb-5 flex items-baseline justify-between gap-3 border-b border-white/10 pb-4">
                   <h2 className="text-xl font-bold text-white">Cartes cadeaux</h2>
-                  <span className="text-xs text-slate-500">{giftCards.length} cartes</span>
+                  <span className="text-xs text-slate-500">{giftCards.length} cartes actives</span>
                 </header>
 
                 <form className="grid gap-3 border-b border-white/10 pb-5 sm:grid-cols-2" onSubmit={(event) => void saveProduct(event, 'giftcard')}>
@@ -189,7 +204,7 @@ export default function AdminCatalogPage() {
 
                 <div className="divide-y divide-white/10">
                   {giftCards.map((card) => (
-                    <form key={card.id} className="grid gap-3 py-4 sm:grid-cols-2 xl:grid-cols-[1fr_1.2fr_0.9fr_auto] xl:items-end" onSubmit={(event) => void saveProduct(event, 'giftcard', card.id)}>
+                    <form key={card.id} className="grid gap-3 py-4 sm:grid-cols-2 xl:grid-cols-[1fr_1.2fr_0.9fr_auto_auto] xl:items-end" onSubmit={(event) => void saveProduct(event, 'giftcard', card.id)}>
                       <label className={labelClass}>Type / marque
                         <input className={inputClass} name="type" defaultValue={card.type} required maxLength={60} />
                       </label>
@@ -201,13 +216,15 @@ export default function AdminCatalogPage() {
                       </label>
                       <div className="flex gap-2 sm:col-span-2 xl:col-span-1">
                         <button type="submit" disabled={savingKey !== null} className="secondary-btn flex-1 px-3 py-2 text-xs disabled:opacity-50">{savingKey === card.id ? '…' : 'Enregistrer'}</button>
-                        <button type="button" disabled={savingKey !== null} onClick={() => void deleteProduct('giftcard', card.id, card.name)} className="rounded-md border border-rose-400/25 px-3 py-2 text-xs font-semibold text-rose-200 hover:bg-rose-500/10 disabled:opacity-50">Supprimer</button>
+                        <button type="button" disabled={savingKey !== null} onClick={() => void toggleArchiveProduct('giftcard', card.id, card.name, true)} className="rounded-md border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-500/15 disabled:opacity-50">Archiver</button>
                       </div>
+                      <button type="button" disabled={savingKey !== null} onClick={() => void deleteProduct('giftcard', card.id, card.name)} className="rounded-md border border-rose-400/25 px-3 py-2 text-xs font-semibold text-rose-200 hover:bg-rose-500/10 disabled:opacity-50">Supprimer</button>
                     </form>
                   ))}
-                  {!giftCards.length && <p className="py-5 text-sm text-slate-500">Aucune carte configurée.</p>}
+                  {!giftCards.length && <p className="py-5 text-sm text-slate-500">Aucune carte active.</p>}
                 </div>
               </section>
+
             </div>
           )}
         </div>

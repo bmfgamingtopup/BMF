@@ -75,6 +75,8 @@ export async function POST(request: Request) {
         amount: normalizeCurrencyLabel(type === 'topup' ? product.price : product.value),
         status: 'awaiting_payment',
         order_type: type,
+        product_id: productId,
+        fulfillment_status: 'waiting_payment',
         reference,
       })
       .select('id, reference, amount, payment_method, payment_channel, status')

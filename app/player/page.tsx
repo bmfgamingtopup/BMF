@@ -2,10 +2,11 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ArrowRight,
+  Bell,
   CalendarDays,
   CreditCard,
   Gamepad2,
@@ -13,8 +14,10 @@ import {
   LogOut,
   Menu,
   Newspaper,
+  ReceiptText,
   Sparkles,
   UserRound,
+  Vote,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -22,7 +25,7 @@ import { Button } from '@/components/ui/button';
 import { fetchCatalogData, type AiEvent, type CatalogData } from '@/lib/data';
 import { createSupabaseClient } from '@/lib/supabase/client';
 
-type PlayerTab = 'menu' | 'news' | 'account';
+type PlayerTab = 'menu' | 'orders' | 'notifications' | 'surveys' | 'news' | 'account';
 type PlayerProfile = {
   id: string;
   email: string;
@@ -32,12 +35,47 @@ type PlayerProfile = {
   createdAt: string;
   emailConfirmed: boolean;
 };
+type PlayerOrder = {
+  id: string;
+  reference: string | null;
+  pack_name: string;
+  amount: string;
+  status: 'awaiting_payment' | 'pending' | 'paid' | 'rejected';
+  order_type: 'topup' | 'giftcard';
+  fulfillment_status: 'waiting_payment' | 'waiting_stock' | 'delivered' | 'legacy';
+  created_at: string;
+  delivery_code: string | null;
+};
+type PlayerSurvey = {
+  id: string;
+  title: string;
+  question: string;
+  options: string[];
+  votedOptionIndex: number | null;
+};
 
 const tabs: { id: PlayerTab; label: string; icon: typeof Menu }[] = [
   { id: 'menu', label: 'Menu', icon: Menu },
+  { id: 'orders', label: 'Commandes', icon: ReceiptText },
+  { id: 'notifications', label: 'Alertes', icon: Bell },
+  { id: 'surveys', label: 'Sondages', icon: Vote },
   { id: 'news', label: 'Actualités', icon: Newspaper },
-  { id: 'account', label: 'Compte joueur', icon: UserRound },
+  { id: 'account', label: 'Compte', icon: UserRound },
 ];
+
+const orderStatusLabels: Record<PlayerOrder['status'], string> = {
+  awaiting_payment: 'Paiement attendu',
+  pending: 'Paiement en vérification',
+  paid: 'Paiement confirmé',
+  rejected: 'Paiement refusé',
+};
+
+const fulfillmentStatusLabels: Record<PlayerOrder['fulfillment_status'], string> = {
+  waiting_payment: 'Livraison après validation du paiement',
+  waiting_stock: 'Paiement confirmé · code en préparation',
+  delivered: 'Code reçu',
+  legacy: 'Commande antérieure',
+};
 
 function getDisplayName(profile: PlayerProfile | null) {
   const name = `${profile?.firstName ?? ''} ${profile?.lastName ?? ''}`.trim();
@@ -74,6 +112,16 @@ export default function PlayerPage() {
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [profileDraft, setProfileDraft] = useState({ firstName: '', lastName: '', freeFireId: '' });
   const [catalog, setCatalog] = useState<CatalogData | null>(null);
+  const [orders, setOrders] = useState<PlayerOrder[]>([]);
+  const [deliveryNotification, setDeliveryNotification] = useState<string | null>(null);
+  const [unreadDeliveryIds, setUnreadDeliveryIds] = useState<string[]>([]);
+  const [orderRefreshMessage, setOrderRefreshMessage] = useState<string | null>(null);
+  const [copyingCodeId, setCopyingCodeId] = useState<string | null>(null);
+  const knownDeliveredOrders = useRef<Set<string>>(new Set());
+  const [surveys, setSurveys] = useState<PlayerSurvey[]>([]);
+  const [surveySelections, setSurveySelections] = useState<Record<string, number>>({});
+  const [surveyMessages, setSurveyMessages] = useState<Record<string, string>>({});
+  const [votingSurveyId, setVotingSurveyId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
@@ -145,7 +193,20 @@ export default function PlayerPage() {
         lastName: playerProfile.lastName,
         freeFireId: playerProfile.freeFireId,
       });
-      setCatalog(await fetchCatalogData());
+      const [catalogData, ordersResponse, surveysResponse] = await Promise.all([
+        fetchCatalogData(),
+        fetch('/api/player/orders', { headers: { Authorization: `Bearer ${accessToken}` }, cache: 'no-store' }),
+        fetch('/api/player/surveys', { headers: { Authorization: `Bearer ${accessToken}` }, cache: 'no-store' }),
+      ]);
+      const [ordersData, surveysData] = await Promise.all([ordersResponse.json(), surveysResponse.json()]);
+      if (!ordersResponse.ok) throw new Error(ordersData.error ?? 'Impossible de charger les commandes.');
+      if (!surveysResponse.ok) throw new Error(surveysData.error ?? 'Impossible de charger les sondages.');
+      setCatalog(catalogData);
+      const initialOrders: PlayerOrder[] = ordersData.orders ?? [];
+      knownDeliveredOrders.current = new Set(initialOrders.filter((order) => order.fulfillment_status === 'delivered').map((order) => order.id));
+      setUnreadDeliveryIds([]);
+      setOrders(initialOrders);
+      setSurveys(surveysData.surveys ?? []);
       setError(null);
       setLoading(false);
     } catch {
@@ -155,10 +216,54 @@ export default function PlayerPage() {
   }, [router]);
 
   useEffect(() => {
-    // The helper waits for authentication and profile requests before updating state.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadPlayerPage();
   }, [loadPlayerPage]);
+
+  useEffect(() => {
+    if (!profile) return;
+
+    let checking = false;
+    const refreshOrders = async () => {
+      if (checking) return;
+      checking = true;
+      try {
+        const client = createSupabaseClient();
+        if (!client) throw new Error('Le service de connexion est indisponible.');
+        const { data: sessionData, error: sessionError } = await client.auth.getSession();
+        if (sessionError || !sessionData.session?.access_token) throw new Error('Reconnecte-toi pour actualiser tes commandes.');
+
+        const response = await fetch('/api/player/orders', {
+          headers: { Authorization: `Bearer ${sessionData.session.access_token}` },
+          cache: 'no-store',
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error ?? 'Actualisation des commandes impossible.');
+
+        const updatedOrders: PlayerOrder[] = data.orders ?? [];
+        const newlyDelivered = updatedOrders.filter((order) =>
+          order.fulfillment_status === 'delivered' && !knownDeliveredOrders.current.has(order.id),
+        );
+        for (const order of updatedOrders) {
+          if (order.fulfillment_status === 'delivered') knownDeliveredOrders.current.add(order.id);
+        }
+        if (newlyDelivered.length) {
+          setUnreadDeliveryIds((current) => [...new Set([...current, ...newlyDelivered.map((order) => order.id)])]);
+          setDeliveryNotification(newlyDelivered.length === 1
+            ? `${newlyDelivered[0].order_type === 'topup' ? 'PIN Free Fire reçu' : 'Carte cadeau reçue'} pour ${newlyDelivered[0].pack_name}.`
+            : `${newlyDelivered.length} nouvelles livraisons reçues.`);
+        }
+        setOrders(updatedOrders);
+        setOrderRefreshMessage(null);
+      } catch (refreshError) {
+        setOrderRefreshMessage(refreshError instanceof Error ? refreshError.message : 'Actualisation des commandes impossible.');
+      } finally {
+        checking = false;
+      }
+    };
+
+    const interval = window.setInterval(() => void refreshOrders(), 20_000);
+    return () => window.clearInterval(interval);
+  }, [profile]);
 
   const handleSaveProfile = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -197,6 +302,18 @@ export default function PlayerPage() {
     setSavingProfile(false);
   };
 
+  const copyDeliveryCode = async (orderId: string, code: string) => {
+    try {
+      setCopyingCodeId(orderId);
+      await navigator.clipboard.writeText(code);
+      setDeliveryNotification(`Code copié pour ${orderId.slice(0, 8)}.`);
+    } catch {
+      setOrderRefreshMessage('Le code n’a pas pu être copié. Sélectionne-le manuellement.');
+    } finally {
+      setCopyingCodeId(null);
+    }
+  };
+
   const handleSignOut = async () => {
     const client = createSupabaseClient();
     if (!client) {
@@ -215,6 +332,49 @@ export default function PlayerPage() {
     router.refresh();
   };
 
+  const handleSurveyVote = async (surveyId: string) => {
+    const optionIndex = surveySelections[surveyId];
+    if (optionIndex === undefined) {
+      setSurveyMessages((current) => ({ ...current, [surveyId]: 'Choisis une réponse avant de voter.' }));
+      return;
+    }
+
+    const client = createSupabaseClient();
+    if (!client) {
+      setSurveyMessages((current) => ({ ...current, [surveyId]: 'Le service de connexion est indisponible.' }));
+      return;
+    }
+    const { data: sessionData, error: sessionError } = await client.auth.getSession();
+    if (sessionError || !sessionData.session?.access_token) {
+      setSurveyMessages((current) => ({ ...current, [surveyId]: 'Reconnecte-toi pour envoyer ton vote.' }));
+      return;
+    }
+
+    setVotingSurveyId(surveyId);
+    setSurveyMessages((current) => ({ ...current, [surveyId]: '' }));
+    try {
+      const response = await fetch('/api/player/surveys', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${sessionData.session.access_token}`,
+        },
+        body: JSON.stringify({ surveyId, optionIndex }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? 'Ton vote n’a pas pu être enregistré.');
+      setSurveys((current) => current.map((survey) => survey.id === surveyId ? { ...survey, votedOptionIndex: optionIndex } : survey));
+      setSurveyMessages((current) => ({ ...current, [surveyId]: 'Merci, ta réponse a bien été enregistrée.' }));
+    } catch (voteError) {
+      setSurveyMessages((current) => ({
+        ...current,
+        [surveyId]: voteError instanceof Error ? voteError.message : 'Ton vote n’a pas pu être enregistré.',
+      }));
+    } finally {
+      setVotingSurveyId(null);
+    }
+  };
+
   const displayName = getDisplayName(profile);
 
   if (loading) {
@@ -222,7 +382,7 @@ export default function PlayerPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#080b16] pb-28 text-slate-100 sm:pb-10">
+    <main className="min-h-screen bg-[#080b16] pb-32 text-slate-100">
       <header className="border-b border-white/10 bg-[#0b1020]/90">
         <div className="page-shell flex min-h-[76px] items-center justify-between gap-4">
           <Link href="/" aria-label="BMF Top Up, accueil" className="flex items-center gap-3">
@@ -237,6 +397,13 @@ export default function PlayerPage() {
       </header>
 
       <div className="page-shell py-8 sm:py-12">
+        {deliveryNotification && (
+          <div role="status" className="mb-5 flex items-center justify-between gap-3 rounded-xl border border-emerald-300/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+            <span><strong>Nouvelle livraison !</strong> {deliveryNotification}</span>
+            <button type="button" onClick={() => { setActiveTab('notifications'); setUnreadDeliveryIds([]); setDeliveryNotification(null); }} className="shrink-0 font-semibold underline underline-offset-4">Voir la notification</button>
+          </div>
+        )}
+        {orderRefreshMessage && <p role="status" className="mb-5 text-xs text-amber-200">{orderRefreshMessage}</p>}
         {error && (
           <div role="alert" className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
             <span>{error}</span>
@@ -255,27 +422,15 @@ export default function PlayerPage() {
           </Link>
         </div>
 
-        <div className="mb-7 grid grid-cols-3 gap-2 rounded-2xl border border-white/10 bg-[#101626] p-1.5" role="tablist" aria-label="Navigation espace joueur">
-          {tabs.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              id={`player-tab-${id}`}
-              type="button"
-              role="tab"
-              aria-selected={activeTab === id}
-              aria-controls={`player-panel-${id}`}
-              onClick={() => setActiveTab(id)}
-              className={`flex min-h-12 items-center justify-center gap-2 rounded-xl px-2 text-xs font-semibold transition sm:text-sm ${activeTab === id ? 'bg-violet-500/20 text-violet-100 shadow-inner shadow-violet-300/10' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
-            >
-              <Icon className="h-4 w-4" aria-hidden="true" />
-              {label}
-            </button>
-          ))}
-        </div>
-
-        <section id={`player-panel-${activeTab}`} role="tabpanel" aria-labelledby={`player-tab-${activeTab}`}>
+        <section id="player-panel" role="tabpanel" aria-labelledby={`player-tab-${activeTab}`}>
           {activeTab === 'menu' && (
             <div className="space-y-8">
+              {orders.some((order) => order.fulfillment_status === 'delivered') && (
+                <button type="button" onClick={() => setActiveTab('orders')} className="flex w-full items-center gap-3 rounded-2xl border border-emerald-300/25 bg-emerald-500/10 p-4 text-left">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-300/15 text-emerald-200"><ReceiptText className="h-5 w-5" aria-hidden="true" /></span>
+                  <span><strong className="block text-sm text-emerald-100">PIN reçu</strong><span className="mt-1 block text-xs text-emerald-200/80">Ton code est disponible dans l’onglet Commandes.</span></span>
+                </button>
+              )}
               <div className="grid gap-4 md:grid-cols-2">
                 <Link href="/topup" className="group rounded-2xl border border-violet-300/15 bg-gradient-to-br from-violet-500/15 to-[#111827] p-5 transition hover:border-violet-300/40 sm:p-6">
                   <div className="flex items-center justify-between">
@@ -313,6 +468,123 @@ export default function PlayerPage() {
                   <Card className="border-white/10 bg-[#111827]/80 p-5 text-sm text-slate-400">Aucune actualité publiée pour le moment. Reviens bientôt pour découvrir les nouveautés BMF.</Card>
                 )}
               </div>
+            </div>
+          )}
+
+          {activeTab === 'orders' && (
+            <div className="space-y-4">
+              <div className="mb-5">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-300">Suivi et notifications</p>
+                <h2 className="mt-2 text-2xl font-bold text-white">Mes commandes</h2>
+              </div>
+              {orders.length ? orders.map((order) => (
+                <article key={order.id} className={`rounded-2xl border p-5 ${order.fulfillment_status === 'delivered' ? 'border-emerald-300/25 bg-emerald-500/[0.06]' : 'border-white/10 bg-[#111827]/80'}`}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="font-bold text-white">{order.pack_name}</h3>
+                      <p className="mt-1 text-xs text-slate-400">{order.reference ?? order.id.slice(0, 8)} · {new Intl.DateTimeFormat('fr-FR', { dateStyle: 'medium' }).format(new Date(order.created_at))}</p>
+                    </div>
+                    <span className="rounded-full border border-white/10 px-3 py-1 text-xs font-semibold text-slate-200">{order.amount}</span>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-xs">
+                    <span className={order.status === 'rejected' ? 'text-rose-300' : order.status === 'paid' ? 'text-emerald-300' : 'text-amber-200'}>{orderStatusLabels[order.status]}</span>
+                    <span className={order.fulfillment_status === 'delivered' ? 'font-semibold text-emerald-300' : 'text-slate-400'}>{fulfillmentStatusLabels[order.fulfillment_status]}</span>
+                  </div>
+                  {order.delivery_code && (
+                    <div className="mt-4 rounded-xl border border-emerald-300/20 bg-[#080b16]/70 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-xs font-semibold uppercase tracking-wider text-emerald-300">PIN reçu · à utiliser pour {order.order_type === 'topup' ? 'ta recharge' : 'ta carte cadeau'}</p>
+                        <button type="button" onClick={() => void copyDeliveryCode(order.id, order.delivery_code!)} className="rounded-lg border border-emerald-300/25 bg-emerald-500/10 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-200 transition hover:bg-emerald-500/15">
+                          {copyingCodeId === order.id ? 'Copié !' : 'Copier'}
+                        </button>
+                      </div>
+                      <code className="mt-2 block break-all text-sm font-bold tracking-wide text-white">{order.delivery_code}</code>
+                    </div>
+                  )}
+                </article>
+              )) : (
+                <Card className="p-7 text-center text-sm text-slate-400">Aucune commande pour le moment. Tes achats apparaîtront ici avec leur statut de livraison.</Card>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'notifications' && (
+            <div className="space-y-4">
+              <div className="mb-5">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">Centre de notifications</p>
+                <h2 className="mt-2 text-2xl font-bold text-white">Livraisons reçues</h2>
+                <p className="mt-2 text-sm text-slate-400">Retrouve ici les PIN Free Fire et les codes de cartes cadeaux livrés après validation du paiement.</p>
+              </div>
+              {orders.filter((order) => order.fulfillment_status === 'delivered').length ? (
+                orders.filter((order) => order.fulfillment_status === 'delivered').map((order) => (
+                  <article key={order.id} className="rounded-2xl border border-emerald-300/25 bg-emerald-500/[0.06] p-5">
+                    <div className="flex items-start gap-3">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-300/15 text-emerald-200">
+                        <Bell className="h-5 w-5" aria-hidden="true" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <h3 className="font-bold text-white">{order.order_type === 'topup' ? 'PIN Free Fire reçu' : 'Carte cadeau reçue'}</h3>
+                        <p className="mt-1 text-sm text-slate-300">{order.pack_name}</p>
+                        <p className="mt-1 text-xs text-slate-400">{order.reference ?? order.id.slice(0, 8)} · {new Intl.DateTimeFormat('fr-FR', { dateStyle: 'medium' }).format(new Date(order.created_at))}</p>
+                      </div>
+                    </div>
+                    {order.delivery_code ? (
+                      <div className="mt-4 rounded-xl border border-emerald-300/20 bg-[#080b16]/70 p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-xs font-semibold uppercase tracking-wider text-emerald-300">Ton code est prêt</p>
+                          <button type="button" onClick={() => void copyDeliveryCode(order.id, order.delivery_code!)} className="rounded-lg border border-emerald-300/25 bg-emerald-500/10 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-emerald-200 transition hover:bg-emerald-500/15">
+                            {copyingCodeId === order.id ? 'Copié !' : 'Copier'}
+                          </button>
+                        </div>
+                        <code className="mt-2 block break-all text-sm font-bold tracking-wide text-white">{order.delivery_code}</code>
+                      </div>
+                    ) : (
+                      <p className="mt-4 text-sm text-amber-200">Le code est en préparation. Consulte tes commandes dans un instant.</p>
+                    )}
+                  </article>
+                ))
+              ) : (
+                <Card className="p-7 text-center text-sm text-slate-400">Aucune livraison pour le moment. Une notification apparaîtra ici dès qu’un code sera attribué à une commande.</Card>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'surveys' && (
+            <div className="space-y-4">
+              <div className="mb-5">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300">Ta voix compte</p>
+                <h2 className="mt-2 text-2xl font-bold text-white">Sondages BMF</h2>
+              </div>
+              {surveys.length ? surveys.map((survey) => (
+                <Card key={survey.id} className="border-white/10 bg-[#111827]/90 p-5 sm:p-6">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-cyan-300">{survey.title}</p>
+                  <h3 className="mt-2 text-lg font-bold text-white">{survey.question}</h3>
+                  <form className="mt-4 space-y-2" onSubmit={(event) => { event.preventDefault(); void handleSurveyVote(survey.id); }}>
+                    {survey.options.map((option, index) => (
+                      <label key={`${survey.id}-${option}`} className={`flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm transition ${survey.votedOptionIndex === index || surveySelections[survey.id] === index ? 'border-cyan-300/40 bg-cyan-400/10 text-white' : 'border-white/10 text-slate-300 hover:bg-white/5'}`}>
+                        <input
+                          type="radio"
+                          name={`survey-${survey.id}`}
+                          value={index}
+                          checked={survey.votedOptionIndex === index || surveySelections[survey.id] === index}
+                          disabled={survey.votedOptionIndex !== null || votingSurveyId === survey.id}
+                          onChange={() => setSurveySelections((current) => ({ ...current, [survey.id]: index }))}
+                          className="accent-cyan-400"
+                        />
+                        {option}
+                      </label>
+                    ))}
+                    {survey.votedOptionIndex === null && (
+                      <Button type="submit" disabled={votingSurveyId === survey.id || surveySelections[survey.id] === undefined} className="mt-2 w-full sm:w-auto">
+                        {votingSurveyId === survey.id ? 'Envoi…' : 'Envoyer ma réponse'}
+                      </Button>
+                    )}
+                    {surveyMessages[survey.id] && <p role="status" className={`text-sm ${survey.votedOptionIndex !== null ? 'text-emerald-300' : 'text-amber-200'}`}>{surveyMessages[survey.id]}</p>}
+                  </form>
+                </Card>
+              )) : (
+                <Card className="p-7 text-center text-sm text-slate-400">Aucun sondage actif. Reviens bientôt pour donner ton avis.</Card>
+              )}
             </div>
           )}
 
@@ -395,11 +667,18 @@ export default function PlayerPage() {
         </section>
       </div>
 
-      <nav className="fixed inset-x-4 bottom-4 z-40 mx-auto grid max-w-md grid-cols-3 gap-1 rounded-2xl border border-white/15 bg-[#111827]/95 p-2 shadow-[0_16px_50px_rgba(0,0,0,0.5)] backdrop-blur-lg sm:hidden" role="tablist" aria-label="Navigation espace joueur">
+      <nav className="fixed inset-x-3 bottom-3 z-40 mx-auto grid max-w-3xl grid-cols-6 gap-1 rounded-2xl border border-white/15 bg-[#111827]/95 p-2 shadow-[0_16px_50px_rgba(0,0,0,0.5)] backdrop-blur-lg" role="tablist" aria-label="Navigation espace joueur">
         {tabs.map(({ id, label, icon: Icon }) => (
-          <button key={id} id={`player-mobile-tab-${id}`} type="button" role="tab" aria-selected={activeTab === id} aria-label={label} onClick={() => { setActiveTab(id); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-xl text-[10px] font-semibold transition ${activeTab === id ? 'bg-[#e43b34] text-white shadow-md shadow-red-950/30' : 'text-slate-400 hover:text-white'}`}>
-            <Icon className="h-4 w-4" aria-hidden="true" />
-            {label}
+          <button key={id} id={`player-tab-${id}`} type="button" role="tab" aria-selected={activeTab === id} aria-controls="player-panel" aria-label={id === 'notifications' && unreadDeliveryIds.length ? `${label}, ${unreadDeliveryIds.length} non lue${unreadDeliveryIds.length > 1 ? 's' : ''}` : label} onClick={() => { setActiveTab(id); if (id === 'notifications') { setUnreadDeliveryIds([]); setDeliveryNotification(null); } window.scrollTo({ top: 0, behavior: 'smooth' }); }} className={`relative flex min-h-12 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-semibold transition sm:flex-row sm:gap-2 sm:text-xs ${activeTab === id ? 'bg-[#e43b34] text-white shadow-md shadow-red-950/30' : 'text-slate-400 hover:text-white'}`}>
+            <span className="relative">
+              <Icon className="h-4 w-4" aria-hidden="true" />
+              {id === 'notifications' && unreadDeliveryIds.length > 0 && (
+                <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-bold leading-none text-white" aria-hidden="true">
+                  {unreadDeliveryIds.length > 9 ? '9+' : unreadDeliveryIds.length}
+                </span>
+              )}
+            </span>
+            <span>{label}</span>
           </button>
         ))}
       </nav>
